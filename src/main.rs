@@ -6,9 +6,10 @@ use std::thread;
 use std::sync::{Arc, Mutex};
 
 mod cpu;
-use cpu::CPU;
-
 mod memory;
+mod bit_logic;
+
+use cpu::CPU;
 use memory::Memory;
 
 const WIDTH: u16 = 160;
