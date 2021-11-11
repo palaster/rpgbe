@@ -49,6 +49,22 @@ impl CPU {
 
     pub fn is_halted(&self) -> bool { self.halted }
 
+    fn get_f(&self) -> u8 {
+        let mut f: u8 = 0x0;
+        f = bit_logic::set_bit_to(self.zero, f, 7);
+        f = bit_logic::set_bit_to(self.subtract, f, 6);
+        f = bit_logic::set_bit_to(self.half_carry, f, 5);
+        f = bit_logic::set_bit_to(self.carry, f, 4);
+        f
+    }
+
+    fn set_f(&mut self, new_f: u8) {
+        self.carry = bit_logic::check_bit(new_f, 4);
+        self.half_carry = bit_logic::check_bit(new_f, 5);
+        self.subtract = bit_logic::check_bit(new_f, 6);
+        self.zero = bit_logic::check_bit(new_f, 7);
+    }
+
     fn fetch(&mut self) -> u8 {
         let memory = MEMORY.lock().unwrap();
         let value = memory.read_from_memory(self.pc.into());
@@ -334,14 +350,14 @@ impl CPU {
     fn call(&mut self) {
         let lower_new: u8 = self.fetch();
         let upper_new: u8 = self.fetch();
-        self.push(self.pc as u8);
         self.push((self.pc >> 8) as u8);
+        self.push(self.pc as u8);
         self.jp_from_bytes(lower_new, upper_new);
     }
 
     fn rst(&mut self, value: u8) {
-        self.push(self.pc as u8);
         self.push((self.pc >> 8) as u8);
+        self.push(self.pc as u8);
         self.jp_from_word((0x0 + value) as u16);
     }
 
@@ -355,50 +371,47 @@ impl CPU {
         self.execute(instruction)
     }
 
+    fn execute_cb(&mut self, instruction: u8) -> f64 {
+        CB_INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+    }
+
     fn execute(&mut self, instruction: u8) -> f64 {
+        let mut branch_taken: bool = false;
         match instruction {
             0x00 => {
                 // NOP
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x01 => {
                 // LD BC, u16
                 let lower: u8 = self.fetch();
                 let upper: u8 = self.fetch();
                 CPU::ld_word(&mut self.c, &mut self.b, lower, upper);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x02 => {
                 // LD (BC), A
                 CPU::write_to_address(bit_logic::compose_bytes(self.c, self.b), self.a);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x03 => {
                 // INC BC
                 CPU::inc_word(&mut self.c, &mut self.b);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x04 => {
                 // INC B
                 self.b = self.inc_byte(self.b);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x05 => {
                 // DEC B
                 self.b = self.dec_byte(self.b);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x06 => {
                 // LD B, u8
                 let value = self.fetch();
                 CPU::ld_byte(&mut self.b, value);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x07 => {
                 // RLCA
                 self.a = self.rlc(self.a);
                 self.zero = false;
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x08 => {
                 // LD (u16), SP
@@ -407,989 +420,1153 @@ impl CPU {
                 let address = bit_logic::compose_bytes(lower, upper);
                 CPU::write_to_address(address, self.sp as u8);
                 CPU::write_to_address(address + 1, (self.sp >> 8) as u8);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x09 => {
                 // ADD HL, BC
                 let (lower, upper) = self.add_word(self.l, self.h, self.c, self.b);
                 self.l = lower;
                 self.h = upper;
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0a => {
                 // LD A, (BC)
                 CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.c, self.b)));
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0b => {
                 // DEC BC
                 CPU::dec_word(&mut self.c, &mut self.b);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0c => {
                 // INC C
                 self.c = self.inc_byte(self.c);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0d => {
                 // DEC C
                 self.c = self.dec_byte(self.c);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0e => {
                 // LD C, u8
                 let value = self.fetch();
                 CPU::ld_byte(&mut self.c, value);
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0f => {
                 // RRCA
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.rrc(self.a);
+                self.zero = false;
             },
             0x10 => {
                 // STOP
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x11 => {
                 // LD DE, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let lower: u8 = self.fetch();
+                let upper: u8 = self.fetch();
+                CPU::ld_word(&mut self.e, &mut self.d, lower, upper);
             },
             0x12 => {
                 // LD (DE), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.e, self.d), self.a);
             },
             0x13 => {
                 // INC DE
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::inc_word(&mut self.e, &mut self.d);
             },
             0x14 => {
                 // INC D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.d = self.inc_byte(self.d);
             },
             0x15 => {
                 // DEC D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.d = self.dec_byte(self.d);
             },
             0x16 => {
                 // LD D, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                CPU::ld_byte(&mut self.d, value);
             },
             0x17 => {
                 // RLA
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.rl(self.a);
+                self.zero = false;
             },
             0x18 => {
                 // JR i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.jr();
             },
             0x19 => {
                 // ADD HL, DE
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let (lower, upper) = self.add_word(self.l, self.h, self.e, self.d);
+                self.l = lower;
+                self.h = upper;
             },
             0x1a => {
                 // LD A, (DE)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.e, self.d)));
             },
             0x1b => {
                 // DEC DE
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::dec_word(&mut self.e, &mut self.d);
             },
             0x1c => {
                 // INC E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.e = self.inc_byte(self.e);
             },
             0x1d => {
                 // DEC E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.e = self.dec_byte(self.e);
             },
             0x1e => {
                 // LD E, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                CPU::ld_byte(&mut self.e, value);
             },
             0x1f => {
                 // RRA
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.rr(self.a);
+                self.zero = false;
             },
             0x20 => {
                 // JR NZ, i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.zero {
+                    self.jr();
+                    branch_taken = true;
+                } else {
+                    self.pc += 1;
+                }
             },
             0x21 => {
                 // LD HL, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let lower: u8 = self.fetch();
+                let upper: u8 = self.fetch();
+                CPU::ld_word(&mut self.l, &mut self.h, lower, upper);
             },
             0x22 => {
                 // LD (HL+), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
+                CPU::inc_word(&mut self.l, &mut self.h);
             },
             0x23 => {
                 // INC HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::inc_word(&mut self.l, &mut self.h);
             },
             0x24 => {
                 // INC H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.h = self.inc_byte(self.h);
             },
             0x25 => {
                 // DEC H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.h = self.dec_byte(self.h);
             },
             0x26 => {
                 // LD H, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                CPU::ld_byte(&mut self.h, value);
             },
             0x27 => {
                 // DAA
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let mut correction: u16 = if self.carry { 0x60 } else { 0x00 };
+
+                if self.half_carry || (!self.subtract && ((self.a & 0x0f) > 9)) {
+                    correction |= 0x06;
+                }
+                if self.carry || (!self.subtract && (self.a > 0x99)) {
+                    correction |= 0x60;
+                }
+
+                self.a = if self.subtract {
+                    (self.a as u16 - correction) as u8
+                } else {
+                    (self.a as u16 + correction) as u8
+                };
+
+                if ((correction << 2) & 0x100) != 0 {
+                    self.carry = true;
+                }
+                self.zero = self.a == 0;
+                self.half_carry = false;
             },
             0x28 => {
                 // JR Z, i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.zero {
+                    self.jr();
+                    branch_taken = true;
+                } else {
+                    self.pc += 1;
+                }
             },
             0x29 => {
                 // ADD HL, HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let (lower, upper) = self.add_word(self.l, self.h, self.l, self.h);
+                self.l = lower;
+                self.h = upper;
             },
             0x2a => {
                 // LD A, (HL+)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                CPU::inc_word(&mut self.l, &mut self.h);
             },
             0x2b => {
                 // DEC HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::dec_word(&mut self.l, &mut self.h);
             },
             0x2c => {
                 // INC L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.l = self.inc_byte(self.l);
             },
             0x2d => {
                 // DEC L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.l = self.dec_byte(self.l);
             },
             0x2e => {
                 // LD L, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                CPU::ld_byte(&mut self.l, value);
             },
             0x2f => {
                 // CPL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = !self.a;
+                self.subtract = true;
+                self.half_carry = true;
             },
             0x30 => {
                 // JR NC, i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.carry {
+                    self.jr();
+                    branch_taken = true;
+                } else {
+                    self.pc += 1;
+                }
             },
             0x31 => {
                 // LD SP, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let lower: u8 = self.fetch();
+                let upper: u8 = self.fetch();
+                self.sp = bit_logic::compose_bytes(lower, upper);
             },
             0x32 => {
                 // LD (HL-), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
+                CPU::dec_word(&mut self.l, &mut self.h);
             },
             0x33 => {
                 // INC SP
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.sp += 1;
             },
             0x34 => {
                 // INC (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let address: u16 = bit_logic::compose_bytes(self.l, self.h);
+                let new_value: u8 = CPU::read_from_address(address);
+                CPU::write_to_address(address, self.inc_byte(new_value));
             },
             0x35 => {
                 // DEC (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let address: u16 = bit_logic::compose_bytes(self.l, self.h);
+                let new_value: u8 = CPU::read_from_address(address);
+                CPU::write_to_address(address, self.dec_byte(new_value));
             },
             0x36 => {
                 // LD (HL), u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.fetch());
             },
             0x37 => {
                 // SCF
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.subtract = false;
+                self.half_carry = false;
+                self.carry = true;
             },
             0x38 => {
                 // JR C, i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.carry {
+                    self.jr();
+                    branch_taken = true;
+                } else {
+                    self.pc += 1;
+                }
             },
             0x39 => {
                 // ADD HL, SP
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let (sp_lower, sp_upper) = bit_logic::decompose_bytes(self.sp);
+                let (lower, upper) = self.add_word(self.l, self.h, sp_lower, sp_upper);
+                self.l = lower;
+                self.h = upper;
             },
             0x3a => {
                 // LD A, (HL-)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                CPU::dec_word(&mut self.l, &mut self.h);
             },
             0x3b => {
                 // DEC SP
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.sp -= 1;
             },
             0x3c => {
                 // INC A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.inc_byte(self.a);
             },
             0x3d => {
                 // DEC A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.dec_byte(self.a);
             },
             0x3e => {
                 // LD A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                CPU::ld_byte(&mut self.a, value);
             },
             0x3f => {
                 // CCF
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.subtract = false;
+                self.half_carry = false;
+                self.carry = !self.carry;
             },
             0x40 => {
                 // LD B, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.b;
+                CPU::ld_byte(&mut self.b, value);
             },
             0x41 => {
                 // LD B, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.c);
             },
             0x42 => {
                 // LD B, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.d);
             },
             0x43 => {
                 // LD B, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.e);
             },
             0x44 => {
                 // LD B, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.h);
             },
             0x45 => {
                 // LD B, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.l);
             },
             0x46 => {
                 // LD B, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x47 => {
                 // LD B, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.b, self.a);
             },
             0x48 => {
                 // LD C, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.b);
             },
             0x49 => {
                 // LD C, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.c;
+                CPU::ld_byte(&mut self.c, value);
             },
             0x4a => {
                 // LD C, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.d);
             },
             0x4b => {
                 // LD C, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.e);
             },
             0x4c => {
                 // LD C, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.h);
             },
             0x4d => {
                 // LD C, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.l);
             },
             0x4e => {
                 // LD C, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x4f => {
                 // LD C, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.c, self.a);                
             },
             0x50 => {
                 // LD D, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.b);
             },
             0x51 => {
                 // LD D, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.c);
             },
             0x52 => {
                 // LD D, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.d;
+                CPU::ld_byte(&mut self.d, value);
             },
             0x53 => {
                 // LD D, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.e);
             },
             0x54 => {
                 // LD D, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.h);
             },
             0x55 => {
                 // LD D, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.l);
             },
             0x56 => {
                 // LD D, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x57 => {
                 // LD D, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.d, self.a);
             },
             0x58 => {
                 // LD E, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.b);
             },
             0x59 => {
                 // LD E, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.c);
             },
             0x5a => {
                 // LD E, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.d);
             },
             0x5b => {
                 // LD E, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.e;
+                CPU::ld_byte(&mut self.e, value);
             },
             0x5c => {
                 // LD E, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.h);
             },
             0x5d => {
                 // LD E, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.l);
             },
             0x5e => {
                 // LD E, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x5f => {
                 // LD E, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.e, self.a);
             },
             0x60 => {
                 // LD H, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.b);
             },
             0x61 => {
                 // LD H, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.c);
             },
             0x62 => {
                 // LD H, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.d);
             },
             0x63 => {
                 // LD H, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.e);
             },
             0x64 => {
                 // LD H, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.h;
+                CPU::ld_byte(&mut self.h, value);
             },
             0x65 => {
                 // LD H, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.l);
             },
             0x66 => {
                 // LD H, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.h, value);
             },
             0x67 => {
                 // LD H, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.h, self.a);
             },
             0x68 => {
                 // LD L, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.b);
             },
             0x69 => {
                 // LD L, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.c);
             },
             0x6a => {
                 // LD L, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.d);
             },
             0x6b => {
                 // LD L, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.e);
             },
             0x6c => {
                 // LD L, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.h);
             },
             0x6d => {
                 // LD L, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.l;
+                CPU::ld_byte(&mut self.l, value);
             },
             0x6e => {
                 // LD L, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.l, value);
             },
             0x6f => {
                 // LD L, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.l, self.a);
             },
             0x70 => {
                 // LD (HL), B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.b);
             },
             0x71 => {
                 // LD (HL), C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.c);
             },
             0x72 => {
                 // LD (HL), D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.d);
             },
             0x73 => {
                 // LD (HL), E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.e);
             },
             0x74 => {
                 // LD (HL), H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.h);
             },
             0x75 => {
                 // LD (HL), L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.l);
             },
             0x76 => {
                 // HALT
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.halted = true;
             },
             0x77 => {
                 // LD (HL), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
             },
             0x78 => {
                 // LD A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.b);
             },
             0x79 => {
                 // LD A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.c);
             },
             0x7a => {
                 // LD A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.d);
             },
             0x7b => {
                 // LD A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.e);
             },
             0x7c => {
                 // LD A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.h);
             },
             0x7d => {
                 // LD A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, self.l);
             },
             0x7e => {
                 // LD A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x7f => {
                 // LD A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value = self.a;
+                CPU::ld_byte(&mut self.a, value);
             },
             0x80 => {
                 // ADD A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.b);
             },
             0x81 => {
                 // ADD A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.c);
             },
             0x82 => {
                 // ADD A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.d);
             },
             0x83 => {
                 // ADD A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.e);
             },
             0x84 => {
                 // ADD A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.h);
             },
             0x85 => {
                 // ADD A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.l);
             },
             0x86 => {
                 // ADD A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x87 => {
                 // ADD A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.add_byte(self.a, self.a);
             },
             0x88 => {
                 // ADC A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.b);
             },
             0x89 => {
                 // ADC A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.c);
             },
             0x8a => {
                 // ADC A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.d);
             },
             0x8b => {
                 // ADC A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.e);
             },
             0x8c => {
                 // ADC A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.h);
             },
             0x8d => {
                 // ADC A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.l);
             },
             0x8e => {
                 // ADC A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x8f => {
                 // ADC A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.adc_byte(self.a, self.a);
             },
             0x90 => {
                 // SUB A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.b);
             },
             0x91 => {
                 // SUB A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.c);
             },
             0x92 => {
                 // SUB A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.d);
             },
             0x93 => {
                 // SUB A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.e);
             },
             0x94 => {
                 // SUB A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.h);
             },
             0x95 => {
                 // SUB A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.l);                
             },
             0x96 => {
                 // SUB A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x97 => {
                 // SUB A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sub_byte(self.a, self.a);
             },
             0x98 => {
                 // SBC A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.b);
             },
             0x99 => {
                 // SBC A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.c);
             },
             0x9a => {
                 // SBC A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.d);
             },
             0x9b => {
                 // SBC A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.e);
             },
             0x9c => {
                 // SBC A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.h);
             },
             0x9d => {
                 // SBC A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.l);
             },
             0x9e => {
                 // SBC A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0x9f => {
                 // SBC A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.sbc_byte(self.a, self.a);
             },
             0xa0 => {
                 // AND A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.b);
             },
             0xa1 => {
                 // AND A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.c);
             },
             0xa2 => {
                 // AND A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.d);
             },
             0xa3 => {
                 // AND A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.e);
             },
             0xa4 => {
                 // AND A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.h);
             },
             0xa5 => {
                 // AND A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.l);
             },
             0xa6 => {
                 // AND A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0xa7 => {
                 // AND A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.and_byte(self.a, self.a);
             },
             0xa8 => {
                 // XOR A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.b);
             },
             0xa9 => {
                 // XOR A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.c);
             },
             0xaa => {
                 // XOR A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.d);
             },
             0xab => {
                 // XOR A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.e);
             },
             0xac => {
                 // XOR A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.h);
             },
             0xad => {
                 // XOR A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.l);
             },
             0xae => {
                 // XOR A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0xaf => {
                 // XOR A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.xor_byte(self.a, self.a);
             },
             0xb0 => {
                 // OR A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.b);
             },
             0xb1 => {
                 // OR A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.c);
             },
             0xb2 => {
                 // OR A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.d);
             },
             0xb3 => {
                 // OR A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.e);
             },
             0xb4 => {
                 // OR A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.h);
             },
             0xb5 => {
                 // OR A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.l);
             },
             0xb6 => {
                 // OR A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0xb7 => {
                 // OR A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.a = self.or_byte(self.a, self.a);
             },
             0xb8 => {
                 // CP A, B
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.b);
             },
             0xb9 => {
                 // CP A, C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.c);
             },
             0xba => {
                 // CP A, D
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.d);
             },
             0xbb => {
                 // CP A, E
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.e);
             },
             0xbc => {
                 // CP A, H
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.h);
             },
             0xbd => {
                 // CP A, L
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.l);
             },
             0xbe => {
                 // CP A, (HL)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
             },
             0xbf => {
                 // CP A, A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.cp_byte(self.a, self.a);
             },
             0xc0 => {
                 // RET NZ
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.zero {
+                    self.ret();
+                    branch_taken = true;
+                }
             },
             0xc1 => {
                 // POP BC
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.c = self.pop();
+                self.b = self.pop();
             },
             0xc2 => {
                 // JP NZ, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.zero {
+                    self.jp_from_pc();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xc3 => {
                 // JP u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.jp_from_pc();
             },
             0xc4 => {
                 // CALL NZ, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.zero {
+                    self.call();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xc5 => {
                 // PUSH BC
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.push(self.b);
+                self.push(self.c);
             },
             0xc6 => {
                 // ADD A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.add_byte(self.a, value);
             },
             0xc7 => {
                 // RST 00h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x0);
             },
             0xc8 => {
                 // RET Z
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.zero {
+                    self.ret();
+                    branch_taken = true;
+                }
             },
             0xc9 => {
                 // RET
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.ret();
             },
             0xca => {
                 // JP Z, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.zero {
+                    self.jp_from_pc();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xcb => {
                 // Prefix CB
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                return self.execute_cb(instruction);
             },
             0xcc => {
                 // CALL Z, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.zero {
+                    self.call();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xcd => {
                 // CALL u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.call();
             },
             0xce => {
                 // ADC A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.adc_byte(self.a, value);
             },
             0xcf => {
                 // RST 08h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x8);
             },
             0xd0 => {
                 // RET NC
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.carry {
+                    self.ret();
+                    branch_taken = true;
+                }
             },
             0xd1 => {
                 // POP DE
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.e = self.pop();
+                self.d = self.pop();
             },
             0xd2 => {
                 // JP NC, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.carry {
+                    self.jp_from_pc();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xd3 => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xd4 => {
                 // CALL NC, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if !self.carry {
+                    self.call();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xd5 => {
                 // PUSH DE
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.push(self.d);
+                self.push(self.e);
             },
             0xd6 => {
                 // SUB A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.sub_byte(self.a, value);
             },
             0xd7 => {
                 // RST 10h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x10);
             },
             0xd8 => {
                 // RET C
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.carry {
+                    self.ret();
+                    branch_taken = true;
+                }
             },
             0xd9 => {
                 // RETI
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.ret();
+                self.interrupts_enabled = false;
             },
             0xda => {
                 // JP C, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.carry {
+                    self.jp_from_pc();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xdb => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xdc => {
                 // CALL C, u16
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                if self.carry {
+                    self.call();
+                    branch_taken = true;
+                } else {
+                    self.pc += 2;
+                }
             },
             0xdd => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xde => {
                 // SBC A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.sbc_byte(self.a, value);
             },
             0xdf => {
                 // RST 18h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x18);
             },
             0xe0 => {
                 // LD (FF00 + u8), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(0xff00 + (self.fetch() as u16), self.a);
             },
             0xe1 => {
                 // POP HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.l = self.pop();
+                self.h = self.pop();
             },
             0xe2 => {
                 // LD (FF00 + C), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::write_to_address(0xff00 + (self.c as u16), self.a);
             },
             0xe3 | 0xe4 => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xe5 => {
                 // PUSH HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.push(self.h);
+                self.push(self.l);
             },
             0xe6 => {
                 // AND A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.and_byte(self.a, value);
             },
             0xe7 => {
                 // RST 20h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x20);
             },
             0xe8 => {
                 // ADD SP, i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let sp: i32 = self.sp as i32;
+                let value: i32 = self.fetch() as i32;
+                let result: i32 = sp + value;
+                self.sp = result as u16;
+                self.zero = false;
+                self.subtract = false;
+                self.half_carry = (((sp ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10);
+                self.carry = (((sp ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100);
             },
             0xe9 => {
                 // JP HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.jp_from_bytes(self.l, self.h);
             },
             0xea => {
                 // LD (u16), A
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let lower: u8 = self.fetch();
+                let upper: u8 = self.fetch();
+                CPU::write_to_address(bit_logic::compose_bytes(lower, upper), self.a);
             },
             0xeb | 0xec | 0xed => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xee => {
                 // XOR A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.xor_byte(self.a, value);
             },
             0xef => {
                 // RST 28h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x28);
             },
             0xf0 => {
                 // LD A, (FF00 + u8)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let offset: u8 = self.fetch();
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(0xff00 + (offset as u16)));
             },
             0xf1 => {
                 // POP AF
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let popped_f: u8 = self.pop();
+                self.set_f(popped_f);
+                self.a = self.pop();
             },
             0xf2 => {
                 // LD A, (FF00 + C)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(0xff00 + (self.c as u16)));
             },
             0xf3 => {
                 // DI
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.pending_interrupt_enable = false;
+                self.interrupts_enabled = false;
             },
             0xf4 => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xf5 => {
                 // PUSH AF
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.push(self.a);
+                self.push(self.get_f());
             },
             0xf6 => {
                 // OR A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.a = self.or_byte(self.a, value);
             },
             0xf7 => {
                 // RST 30h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x30);
             },
             0xf8 => {
                 // LD HL, SP + i8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: i32 = self.fetch() as i32;
+                let result: i32 = self.sp as i32 + value;
+                let (lower, upper) = bit_logic::decompose_bytes(result as u16);
+                self.l = lower;
+                self.h = upper;
+                self.zero = false;
+                self.subtract = false;
+                self.half_carry = (((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10);
+                self.carry = (((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100);
             },
             0xf9 => {
                 // LD SP, HL
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.sp = bit_logic::compose_bytes(self.l, self.h);
             },
             0xfa => {
                 // LD A, (u16)
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let lower: u8 = self.fetch();
+                let upper: u8 = self.fetch();
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(lower, upper)));
             },
             0xfb => {
                 // EI
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.pending_interrupt_enable = true;
             },
             0xfc | 0xfd => {
                 // Blank Instruction
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0xfe => {
                 // CP A, u8
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                let value: u8 = self.fetch();
+                self.cp_byte(self.a, value);
             },
             0xff => {
                 // RST 38h
-                INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+                self.rst(0x38);
             },
+        }
+        if branch_taken {
+            BRANCH_INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
+        } else {
+            INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
         }
     }
 }
