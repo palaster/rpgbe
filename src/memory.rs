@@ -45,11 +45,11 @@ impl Memory {
         }
     }
 
-    pub fn read_from_memory(&self, address: &usize) -> u8 {
-        self.rom[*address]
+    pub fn read_from_memory(&self, address: usize) -> u8 {
+        self.rom[address]
     }
 
-    pub fn write_to_memory(&mut self, address: &usize, value: &u8) {
-        self.rom[*address] = *value;
+    pub fn write_to_memory(&mut self, address: usize, value: u8) {
+        self.rom[address] = value;
     }
 }

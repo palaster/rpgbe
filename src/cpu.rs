@@ -51,40 +51,37 @@ impl CPU {
 
     fn fetch(&mut self) -> u8 {
         let memory = MEMORY.lock().unwrap();
-        let value = memory.read_from_memory(&self.pc.into());
+        let value = memory.read_from_memory(self.pc.into());
         self.pc += 1;
         value
     }
 
-    fn read_from_address(address: &u16) -> u8 {
+    fn read_from_address(address: u16) -> u8 {
         let memory = MEMORY.lock().unwrap();
-        memory.read_from_memory(&(*address).into())
+        memory.read_from_memory(address.into())
     }
 
-    fn write_to_address(address: &u16, value: &u8) {
+    fn write_to_address(address: u16, value: u8) {
         let mut memory = MEMORY.lock().unwrap();
-        memory.write_to_memory(&(*address).into(), value);
+        memory.write_to_memory(address.into(), value);
     }
 
-    fn pop(&mut self, lower: &mut u8, upper: &mut u8) {
+    fn pop(&mut self) -> u8 {
         let memory = MEMORY.lock().unwrap();
-        *lower = memory.read_from_memory(&self.sp.into());
+        let value: u8 = memory.read_from_memory(self.sp.into());
         self.sp += 1;
-        *upper = memory.read_from_memory(&self.sp.into());
-        self.sp += 1;
+        value
     }
     
-    fn push(&mut self, lower: &u8, upper: &u8) {
+    fn push(&mut self, value: u8) {
         let mut memory = MEMORY.lock().unwrap();
         self.sp -= 1;
-        memory.write_to_memory(&self.sp.into(), upper);
-        self.sp -= 1;
-        memory.write_to_memory(&self.sp.into(), lower);
+        memory.write_to_memory(self.sp.into(), value);
     }
 
     fn rlc(&mut self, value: u8) -> u8 {
-        let carry: bool = bit_logic::check_bit(&value, &7);
-        let truncated: u8 = bit_logic::bit_value(&value, &7);
+        let carry: bool = bit_logic::check_bit(value, 7);
+        let truncated: u8 = bit_logic::bit_value(value, 7);
         let result: u8 = (value << 1) | truncated;
         self.zero = result == 0;
         self.subtract = false;
@@ -94,8 +91,8 @@ impl CPU {
     }
     
     fn rrc(&mut self, value: u8) -> u8 {
-        let carry: bool = bit_logic::check_bit(&value, &0);
-        let truncated: u8 = bit_logic::bit_value(&value, &0);
+        let carry: bool = bit_logic::check_bit(value, 0);
+        let truncated: u8 = bit_logic::bit_value(value, 0);
         let result: u8 = (value >> 1) | (truncated << 7);
         self.zero = result == 0;
         self.subtract = false;
@@ -106,7 +103,7 @@ impl CPU {
     
     fn rl(&mut self, value: u8) -> u8 {
         let carry: bool = self.carry;
-        let will_carry: bool = bit_logic::check_bit(&value, &7);
+        let will_carry: bool = bit_logic::check_bit(value, 7);
         let mut result: u8 = value << 1;
         result |= carry as u8;
         self.zero = result == 0;
@@ -118,7 +115,7 @@ impl CPU {
     
     fn rr(&mut self, value: u8) -> u8 {
         let carry: bool = self.carry;
-        let will_carry: bool = bit_logic::check_bit(&value, &0);
+        let will_carry: bool = bit_logic::check_bit(value, 0);
         let mut result: u8 = value >> 1;
         result |= (carry as u8) << 7;
         self.zero = result == 0;
@@ -129,7 +126,7 @@ impl CPU {
     }
     
     fn sla(&mut self, value: u8) -> u8 {
-        let carry: bool = bit_logic::check_bit(&value, &7);
+        let carry: bool = bit_logic::check_bit(value, 7);
         let result: u8 = value << 1;
         self.zero = result == 0;
         self.subtract = false;
@@ -139,10 +136,10 @@ impl CPU {
     }
     
     fn sra(&mut self, value: u8) -> u8 {
-        let carry: bool = bit_logic::check_bit(&value, &0);
-        let top: bool = bit_logic::check_bit(&value, &7);
+        let carry: bool = bit_logic::check_bit(value, 0);
+        let top: bool = bit_logic::check_bit(value, 7);
         let mut result: u8 = value >> 1;
-        result = bit_logic::set_bit_to(&top, &result, &7);
+        result = bit_logic::set_bit_to(top, result, 7);
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = false;
@@ -151,7 +148,7 @@ impl CPU {
     }
     
     fn srl(&mut self, value: u8) -> u8 {
-        let least_bit_set: bool = bit_logic::check_bit(&value, &0);
+        let least_bit_set: bool = bit_logic::check_bit(value, 0);
         let result: u8 = value >> 1;
         self.zero = result == 0;
         self.subtract = false;
@@ -171,32 +168,32 @@ impl CPU {
         result
     }
     
-    fn bit(&mut self, bit: &u8, reg: &u8) {
+    fn bit(&mut self, bit: u8, reg: u8) {
         self.zero = !bit_logic::check_bit(reg, bit);
         self.subtract = false;
         self.half_carry = true;
     }
     
-    fn set(bit: &u8, reg: &mut u8) { *reg = bit_logic::set_bit(reg, bit); }
+    fn set(bit: u8, reg: &mut u8) { *reg = bit_logic::set_bit(*reg, bit); }
     
-    fn res(bit: &u8, reg: &mut u8) { *reg = bit_logic::reset_bit(reg, bit); }
+    fn res(bit: u8, reg: &mut u8) { *reg = bit_logic::reset_bit(*reg, bit); }
 
-    fn ld_word(lower_des: &mut u8, upper_des: &mut u8, lower: &u8, upper: &u8) {
-        *lower_des = *lower;
-        *upper_des = *upper;
+    fn ld_word(lower_des: &mut u8, upper_des: &mut u8, lower: u8, upper: u8) {
+        *lower_des = lower;
+        *upper_des = upper;
     }
 
-    fn ld_byte(des: &mut u8, src: &u8) { *des = *src; }
+    fn ld_byte(des: &mut u8, src: u8) { *des = src; }
 
     fn inc_word(lower: &mut u8, upper: &mut u8) {
-        let mut word: u16 = bit_logic::compose_bytes(lower, upper);
+        let mut word: u16 = bit_logic::compose_bytes(*lower, *upper);
         word += 1;
         *upper = (word >> 8) as u8;
         *lower = word as u8;
     }
 
     fn dec_word(lower: &mut u8, upper: &mut u8) {
-        let mut word: u16 = bit_logic::compose_bytes(lower, upper);
+        let mut word: u16 = bit_logic::compose_bytes(*lower, *upper);
         word -= 1;
         *upper = (word >> 8) as u8;
         *lower = word as u8;
@@ -219,8 +216,8 @@ impl CPU {
     }
 
     fn add_word(&mut self, lower_value: u8, upper_value: u8, lower_addend: u8, upper_addend: u8) -> (u8, u8) {
-        let value_word: u16 = bit_logic::compose_bytes(&lower_value, &upper_value);
-        let addend_word: u16 = bit_logic::compose_bytes(&lower_addend, &upper_addend);
+        let value_word: u16 = bit_logic::compose_bytes(lower_value, upper_value);
+        let addend_word: u16 = bit_logic::compose_bytes(lower_addend, upper_addend);
         let result: u32 = (value_word as u32) + (addend_word as u32);
         self.subtract = false;
         self.half_carry = (value_word & 0xfff) + (addend_word & 0xfff) > 0xfff;
@@ -231,26 +228,24 @@ impl CPU {
     fn add_byte(&mut self, value: u8, addend: u8) -> u8 {
         let first: u8 = value;
         let second: u8 = addend;
-        let result_u16: u16 = (first as u16) + (second as u16);
-        let result_u8: u8 = result_u16 as u8;
-        self.zero = result_u8 == 0;
+        let result: u16 = (first as u16) + (second as u16);
+        self.zero = result == 0;
         self.subtract = false;
         self.half_carry = (first & 0xf) + (second & 0xf) > 0xf;
-        self.carry = (result_u16 & 0x100) != 0;
-        result_u8
+        self.carry = (result & 0x100) != 0;
+        result as u8
     }
 
     fn adc_byte(&mut self, value: u8, addend: u8) -> u8 {
         let first: u8 = value;
         let second: u8 = addend;
         let carry: u8 = self.carry as u8;
-        let result_u16: u16 = (first as u16) + (second as u16) + (carry as u16);
-        let result_u8: u8 = result_u16 as u8;
-        self.zero = result_u8 == 0;
+        let result: u16 = (first as u16) + (second as u16) + (carry as u16);
+        self.zero = result == 0;
         self.subtract = false;
         self.half_carry = ((first & 0xf) + (second & 0xf) + carry) > 0xf;
-        self.carry = result_u16 > 0xff;
-        result_u8
+        self.carry = result > 0xff;
+        result as u8
     }
 
     fn sub_byte(&mut self, value: u8, subtrahend: u8) -> u8 {
@@ -268,13 +263,12 @@ impl CPU {
         let first: u8 = value;
         let second: u8 = subtrahend;
         let carry: u8 = self.carry as u8;
-        let result_i16: i16 = (first as i16) + (second as i16) + (carry as i16);
-        let result_u8: u8 = result_i16 as u8;
-        self.zero = result_u8 == 0;
+        let result: i16 = (first as i16) + (second as i16) + (carry as i16);
+        self.zero = result == 0;
         self.subtract = true;
         self.half_carry = ((first & 0xf) - (second & 0xf) - carry) < 0;
-        self.carry = result_i16 < 0;
-        result_u8
+        self.carry = result < 0;
+        result as u8
     }
 
     fn and_byte(&mut self, value: u8, anding_value: u8) -> u8 {
@@ -315,44 +309,45 @@ impl CPU {
     }
 
     fn ret(&mut self) {
-        let mut lower: u8 = 0;
-        let mut upper: u8 = 0;
-        self.pop(&mut lower, &mut upper);
-        let pc: u16 = bit_logic::compose_bytes(&lower, &upper);
+        let lower: u8 = self.pop();
+        let upper: u8 = self.pop();
+        let pc: u16 = bit_logic::compose_bytes(lower, upper);
         /*
         if(gameBoy->eiHaltBug) {
             pc--;
             gameBoy->eiHaltBug = false;
         }
         */
-        self.jp_from_word(&pc);
+        self.jp_from_word(pc);
     }
 
-    fn jp_from_word(&mut self, address: &u16) { self.pc = *address; }
+    fn jp_from_word(&mut self, address: u16) { self.pc = address; }
 
-    fn jp_from_bytes(&mut self, lower: &u8, upper: &u8) { self.jp_from_word(&bit_logic::compose_bytes(lower, upper)); }
+    fn jp_from_bytes(&mut self, lower: u8, upper: u8) { self.jp_from_word(bit_logic::compose_bytes(lower, upper)); }
 
     fn jp_from_pc(&mut self) {
         let lower: u8 = self.fetch();
         let upper: u8 = self.fetch();
-        self.jp_from_bytes(&lower, &upper);
+        self.jp_from_bytes(lower, upper);
     }
 
     fn call(&mut self) {
         let lower_new: u8 = self.fetch();
         let upper_new: u8 = self.fetch();
-        self.push(&(self.pc as u8), &((self.pc >> 8) as u8));
-        self.jp_from_bytes(&lower_new, &upper_new);
+        self.push(self.pc as u8);
+        self.push((self.pc >> 8) as u8);
+        self.jp_from_bytes(lower_new, upper_new);
     }
 
-    fn rst(&mut self, value: &u8) {
-        self.push(&(self.pc as u8), &((self.pc >> 8) as u8));
-        self.jp_from_word(&((0x0 + value) as u16));
+    fn rst(&mut self, value: u8) {
+        self.push(self.pc as u8);
+        self.push((self.pc >> 8) as u8);
+        self.jp_from_word((0x0 + value) as u16);
     }
 
     fn jr(&mut self) {
         let value: i32 = self.fetch() as i32;
-        self.jp_from_word(&((self.pc as i32 + value) as u16));
+        self.jp_from_word((self.pc as i32 + value) as u16);
     }
 
     pub fn update(&mut self) -> f64 {
@@ -370,12 +365,12 @@ impl CPU {
                 // LD BC, u16
                 let lower: u8 = self.fetch();
                 let upper: u8 = self.fetch();
-                CPU::ld_word(&mut self.c, &mut self.b, &lower, &upper);
+                CPU::ld_word(&mut self.c, &mut self.b, lower, upper);
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x02 => {
                 // LD (BC), A
-                CPU::write_to_address(&bit_logic::compose_bytes(&self.c, &self.b), &self.a);
+                CPU::write_to_address(bit_logic::compose_bytes(self.c, self.b), self.a);
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x03 => {
@@ -396,7 +391,7 @@ impl CPU {
             0x06 => {
                 // LD B, u8
                 let value = self.fetch();
-                CPU::ld_byte(&mut self.b, &value);
+                CPU::ld_byte(&mut self.b, value);
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x07 => {
@@ -409,9 +404,9 @@ impl CPU {
                 // LD (u16), SP
                 let lower = self.fetch();
                 let upper = self.fetch();
-                let address = bit_logic::compose_bytes(&lower, &upper);
-                CPU::write_to_address(&address, &(self.sp as u8));
-                CPU::write_to_address(&(address + 1), &((self.sp >> 8) as u8));
+                let address = bit_logic::compose_bytes(lower, upper);
+                CPU::write_to_address(address, self.sp as u8);
+                CPU::write_to_address(address + 1, (self.sp >> 8) as u8);
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x09 => {
@@ -423,7 +418,7 @@ impl CPU {
             },
             0x0a => {
                 // LD A, (BC)
-                CPU::ld_byte(&mut self.a, &CPU::read_from_address(&bit_logic::compose_bytes(&self.c, &self.b)));
+                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.c, self.b)));
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0b => {
@@ -443,6 +438,8 @@ impl CPU {
             },
             0x0e => {
                 // LD C, u8
+                let value = self.fetch();
+                CPU::ld_byte(&mut self.c, value);
                 INSTRUCTION_TIMINGS[usize::from(instruction)] as f64
             },
             0x0f => {
