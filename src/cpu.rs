@@ -1,10 +1,62 @@
-use super::MEMORY;
-//use crate::memory::Memory;
+use crate::memory::Memory;
 use crate::bit_logic;
 
-static INSTRUCTION_TIMINGS: [u8; 256] = [0; 256];
-static BRANCH_INSTRUCTION_TIMINGS: [u8; 256] = [0; 256];
-static CB_INSTRUCTION_TIMINGS: [u8; 256] = [0; 256];
+use std::sync::{Arc, Mutex};
+
+static INSTRUCTION_TIMINGS: [u8; 256] = [
+    1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
+    1,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
+    2,3,2,2,1,1,2,1,2,2,2,2,1,1,2,1,
+    2,3,2,2,3,3,3,1,2,2,2,2,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    2,2,2,2,2,2,1,2,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    2,3,3,4,3,4,2,4,2,4,3,0,3,6,2,4,
+    2,3,3,0,3,4,2,4,2,4,3,0,3,0,2,4,
+    3,3,2,0,0,4,2,4,4,1,4,0,0,0,2,4,
+    3,3,2,1,0,4,2,4,3,2,4,1,0,0,2,4,
+];
+static BRANCH_INSTRUCTION_TIMINGS: [u8; 256] = [
+    1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
+    1,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
+    3,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
+    3,3,2,2,3,3,3,1,3,2,2,2,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    2,2,2,2,2,2,1,2,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,
+    5,3,4,4,6,4,2,4,5,4,4,0,6,6,2,4,
+    5,3,4,0,6,4,2,4,5,4,4,0,6,0,2,4,
+    3,3,2,0,0,4,2,4,4,1,4,0,0,0,2,4,
+    3,3,2,1,0,4,2,4,3,2,4,1,0,0,2,4,
+];
+static CB_INSTRUCTION_TIMINGS: [u8; 256] = [
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
+    2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
+    2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
+    2,2,2,2,2,2,3,2,2,2,2,2,2,2,3,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+    2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
+];
 
 pub struct CPU {
     a: u8,
@@ -23,10 +75,11 @@ pub struct CPU {
     halted: bool,
     interrupts_enabled: bool,
     pending_interrupt_enable: bool,
+    memory: Arc<Mutex<Memory>>,
 }
 
 impl CPU {
-    pub fn new() -> CPU {
+    pub fn new(memory: Arc<Mutex<Memory>>) -> CPU {
         CPU {
             a: 0x01,
             b: 0x00,
@@ -44,6 +97,7 @@ impl CPU {
             halted: false,
             interrupts_enabled: false,
             pending_interrupt_enable: false,
+            memory: memory,
         }
     }
 
@@ -66,33 +120,33 @@ impl CPU {
     }
 
     fn fetch(&mut self) -> u8 {
-        let memory = MEMORY.lock().unwrap();
-        let value = memory.read_from_memory(self.pc.into());
-        self.pc += 1;
+        let memory = self.memory.lock().unwrap();
+        let value = memory.read_from_memory(self.pc);
+        self.pc = u16::wrapping_add(self.pc, 1);
         value
     }
 
-    fn read_from_address(address: u16) -> u8 {
-        let memory = MEMORY.lock().unwrap();
-        memory.read_from_memory(address.into())
+    fn read_from_address(&self, address: u16) -> u8 {
+        let memory = self.memory.lock().unwrap();
+        memory.read_from_memory(address)
     }
 
-    fn write_to_address(address: u16, value: u8) {
-        let mut memory = MEMORY.lock().unwrap();
-        memory.write_to_memory(address.into(), value);
+    fn write_to_address(&mut self, address: u16, value: u8) {
+        let mut memory = self.memory.lock().unwrap();
+        memory.write_to_memory(address, value);
     }
 
     fn pop(&mut self) -> u8 {
-        let memory = MEMORY.lock().unwrap();
-        let value: u8 = memory.read_from_memory(self.sp.into());
-        self.sp += 1;
+        let memory = self.memory.lock().unwrap();
+        let value: u8 = memory.read_from_memory(self.sp);
+        self.sp = u16::wrapping_add(self.sp, 1);
         value
     }
     
     fn push(&mut self, value: u8) {
-        let mut memory = MEMORY.lock().unwrap();
-        self.sp -= 1;
-        memory.write_to_memory(self.sp.into(), value);
+        let mut memory = self.memory.lock().unwrap();
+        self.sp = u16::wrapping_sub(self.sp, 1);
+        memory.write_to_memory(self.sp, value);
     }
 
     fn rlc(&mut self, value: u8) -> u8 {
@@ -389,7 +443,7 @@ impl CPU {
             },
             0x02 => {
                 // LD (BC), A
-                CPU::write_to_address(bit_logic::compose_bytes(self.c, self.b), self.a);
+                self.write_to_address(bit_logic::compose_bytes(self.c, self.b), self.a);
             },
             0x03 => {
                 // INC BC
@@ -418,8 +472,8 @@ impl CPU {
                 let lower = self.fetch();
                 let upper = self.fetch();
                 let address = bit_logic::compose_bytes(lower, upper);
-                CPU::write_to_address(address, self.sp as u8);
-                CPU::write_to_address(address + 1, (self.sp >> 8) as u8);
+                self.write_to_address(address, self.sp as u8);
+                self.write_to_address(address + 1, (self.sp >> 8) as u8);
             },
             0x09 => {
                 // ADD HL, BC
@@ -429,7 +483,8 @@ impl CPU {
             },
             0x0a => {
                 // LD A, (BC)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.c, self.b)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.c, self.b));
+                CPU::ld_byte(&mut self.a, value);
             },
             0x0b => {
                 // DEC BC
@@ -464,7 +519,7 @@ impl CPU {
             },
             0x12 => {
                 // LD (DE), A
-                CPU::write_to_address(bit_logic::compose_bytes(self.e, self.d), self.a);
+                self.write_to_address(bit_logic::compose_bytes(self.e, self.d), self.a);
             },
             0x13 => {
                 // INC DE
@@ -500,7 +555,8 @@ impl CPU {
             },
             0x1a => {
                 // LD A, (DE)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.e, self.d)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.e, self.d));
+                CPU::ld_byte(&mut self.a, value);
             },
             0x1b => {
                 // DEC DE
@@ -541,7 +597,7 @@ impl CPU {
             },
             0x22 => {
                 // LD (HL+), A
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
                 CPU::inc_word(&mut self.l, &mut self.h);
             },
             0x23 => {
@@ -601,7 +657,8 @@ impl CPU {
             },
             0x2a => {
                 // LD A, (HL+)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.a, value);
                 CPU::inc_word(&mut self.l, &mut self.h);
             },
             0x2b => {
@@ -644,7 +701,7 @@ impl CPU {
             },
             0x32 => {
                 // LD (HL-), A
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
                 CPU::dec_word(&mut self.l, &mut self.h);
             },
             0x33 => {
@@ -654,18 +711,21 @@ impl CPU {
             0x34 => {
                 // INC (HL)
                 let address: u16 = bit_logic::compose_bytes(self.l, self.h);
-                let new_value: u8 = CPU::read_from_address(address);
-                CPU::write_to_address(address, self.inc_byte(new_value));
+                let new_value: u8 = self.read_from_address(address);
+                let new_value: u8 = self.inc_byte(new_value);
+                self.write_to_address(address, new_value);
             },
             0x35 => {
                 // DEC (HL)
                 let address: u16 = bit_logic::compose_bytes(self.l, self.h);
-                let new_value: u8 = CPU::read_from_address(address);
-                CPU::write_to_address(address, self.dec_byte(new_value));
+                let new_value: u8 = self.read_from_address(address);
+                let new_value: u8 = self.dec_byte(new_value);
+                self.write_to_address(address, new_value);
             },
             0x36 => {
                 // LD (HL), u8
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.fetch());
+                let value: u8 = self.fetch();
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), value);
             },
             0x37 => {
                 // SCF
@@ -691,7 +751,8 @@ impl CPU {
             },
             0x3a => {
                 // LD A, (HL-)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.a, value);
                 CPU::dec_word(&mut self.l, &mut self.h);
             },
             0x3b => {
@@ -744,7 +805,8 @@ impl CPU {
             },
             0x46 => {
                 // LD B, (HL)
-                CPU::ld_byte(&mut self.b, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.b, value);
             },
             0x47 => {
                 // LD B, A
@@ -777,7 +839,8 @@ impl CPU {
             },
             0x4e => {
                 // LD C, (HL)
-                CPU::ld_byte(&mut self.c, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.c, value);
             },
             0x4f => {
                 // LD C, A
@@ -810,7 +873,8 @@ impl CPU {
             },
             0x56 => {
                 // LD D, (HL)
-                CPU::ld_byte(&mut self.d, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.d, value);
             },
             0x57 => {
                 // LD D, A
@@ -843,7 +907,8 @@ impl CPU {
             },
             0x5e => {
                 // LD E, (HL)
-                CPU::ld_byte(&mut self.e, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.e, value);
             },
             0x5f => {
                 // LD E, A
@@ -876,7 +941,7 @@ impl CPU {
             },
             0x66 => {
                 // LD H, (HL)
-                let value = CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
                 CPU::ld_byte(&mut self.h, value);
             },
             0x67 => {
@@ -910,7 +975,7 @@ impl CPU {
             },
             0x6e => {
                 // LD L, (HL)
-                let value = CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
                 CPU::ld_byte(&mut self.l, value);
             },
             0x6f => {
@@ -919,27 +984,27 @@ impl CPU {
             },
             0x70 => {
                 // LD (HL), B
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.b);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.b);
             },
             0x71 => {
                 // LD (HL), C
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.c);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.c);
             },
             0x72 => {
                 // LD (HL), D
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.d);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.d);
             },
             0x73 => {
                 // LD (HL), E
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.e);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.e);
             },
             0x74 => {
                 // LD (HL), H
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.h);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.h);
             },
             0x75 => {
                 // LD (HL), L
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.l);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.l);
             },
             0x76 => {
                 // HALT
@@ -947,7 +1012,7 @@ impl CPU {
             },
             0x77 => {
                 // LD (HL), A
-                CPU::write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
+                self.write_to_address(bit_logic::compose_bytes(self.l, self.h), self.a);
             },
             0x78 => {
                 // LD A, B
@@ -975,7 +1040,8 @@ impl CPU {
             },
             0x7e => {
                 // LD A, (HL)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                CPU::ld_byte(&mut self.a, value);
             },
             0x7f => {
                 // LD A, A
@@ -1008,7 +1074,8 @@ impl CPU {
             },
             0x86 => {
                 // ADD A, (HL)
-                self.a = self.add_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.add_byte(self.a, value);
             },
             0x87 => {
                 // ADD A, A
@@ -1040,7 +1107,8 @@ impl CPU {
             },
             0x8e => {
                 // ADC A, (HL)
-                self.a = self.adc_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.adc_byte(self.a, value);
             },
             0x8f => {
                 // ADC A, A
@@ -1072,7 +1140,8 @@ impl CPU {
             },
             0x96 => {
                 // SUB A, (HL)
-                self.a = self.sub_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.sub_byte(self.a, value);
             },
             0x97 => {
                 // SUB A, A
@@ -1104,7 +1173,8 @@ impl CPU {
             },
             0x9e => {
                 // SBC A, (HL)
-                self.a = self.sbc_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.sbc_byte(self.a, value);
             },
             0x9f => {
                 // SBC A, A
@@ -1136,7 +1206,8 @@ impl CPU {
             },
             0xa6 => {
                 // AND A, (HL)
-                self.a = self.and_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.and_byte(self.a, value);
             },
             0xa7 => {
                 // AND A, A
@@ -1168,7 +1239,8 @@ impl CPU {
             },
             0xae => {
                 // XOR A, (HL)
-                self.a = self.xor_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.xor_byte(self.a, value);
             },
             0xaf => {
                 // XOR A, A
@@ -1200,7 +1272,8 @@ impl CPU {
             },
             0xb6 => {
                 // OR A, (HL)
-                self.a = self.or_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.a = self.or_byte(self.a, value);
             },
             0xb7 => {
                 // OR A, A
@@ -1232,7 +1305,8 @@ impl CPU {
             },
             0xbe => {
                 // CP A, (HL)
-                self.cp_byte(self.a, CPU::read_from_address(bit_logic::compose_bytes(self.l, self.h)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(self.l, self.h));
+                self.cp_byte(self.a, value);
             },
             0xbf => {
                 // CP A, A
@@ -1426,7 +1500,8 @@ impl CPU {
             },
             0xe0 => {
                 // LD (FF00 + u8), A
-                CPU::write_to_address(0xff00 + (self.fetch() as u16), self.a);
+                let value: u8 = self.fetch();
+                self.write_to_address(0xff00 + (value as u16), self.a);
             },
             0xe1 => {
                 // POP HL
@@ -1435,7 +1510,7 @@ impl CPU {
             },
             0xe2 => {
                 // LD (FF00 + C), A
-                CPU::write_to_address(0xff00 + (self.c as u16), self.a);
+                self.write_to_address(0xff00 + (self.c as u16), self.a);
             },
             0xe3 | 0xe4 => {
                 // Blank Instruction
@@ -1473,7 +1548,7 @@ impl CPU {
                 // LD (u16), A
                 let lower: u8 = self.fetch();
                 let upper: u8 = self.fetch();
-                CPU::write_to_address(bit_logic::compose_bytes(lower, upper), self.a);
+                self.write_to_address(bit_logic::compose_bytes(lower, upper), self.a);
             },
             0xeb | 0xec | 0xed => {
                 // Blank Instruction
@@ -1490,7 +1565,8 @@ impl CPU {
             0xf0 => {
                 // LD A, (FF00 + u8)
                 let offset: u8 = self.fetch();
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(0xff00 + (offset as u16)));
+                let value: u8 = self.read_from_address(0xff00 + (offset as u16));
+                CPU::ld_byte(&mut self.a, value);
             },
             0xf1 => {
                 // POP AF
@@ -1500,7 +1576,8 @@ impl CPU {
             },
             0xf2 => {
                 // LD A, (FF00 + C)
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(0xff00 + (self.c as u16)));
+                let value: u8 = self.read_from_address(0xff00 + (self.c as u16));
+                CPU::ld_byte(&mut self.a, value);
             },
             0xf3 => {
                 // DI
@@ -1544,7 +1621,8 @@ impl CPU {
                 // LD A, (u16)
                 let lower: u8 = self.fetch();
                 let upper: u8 = self.fetch();
-                CPU::ld_byte(&mut self.a, CPU::read_from_address(bit_logic::compose_bytes(lower, upper)));
+                let value: u8 = self.read_from_address(bit_logic::compose_bytes(lower, upper));
+                CPU::ld_byte(&mut self.a, value);
             },
             0xfb => {
                 // EI
