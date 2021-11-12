@@ -5,9 +5,9 @@ use crate::bit_logic;
 
 use std::sync::{Arc, Mutex};
 
-const TIMA: u16 = 0xff05;
+pub const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
-const TAC: u16 = 0xff07;
+pub const TAC: u16 = 0xff07;
 
 const VERTICAL_BLANK_SCAN_LINE: u16 = 144;
 const VERTICAL_BLANK_SCAN_LINE_MAX: u16 = 153;
@@ -16,7 +16,7 @@ const SCANLINE_COUNTER_START: u16 = 456;
 pub struct Gameboy {
     scanline_counter: i32,
     timer_counter: i32,
-    divider_counter: i32,
+    pub divider_counter: i32,
     halt_bug: bool,
     ei_halt_bug: bool,
     gamepad_state: u8,
@@ -53,7 +53,7 @@ impl Gameboy {
 
 
     fn update_timer(&mut self, cycles: f64) {
-
+        
     }
 
     fn update_graphics(&mut self, cycles: f64) {

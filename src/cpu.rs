@@ -120,33 +120,30 @@ impl CPU {
     }
 
     fn fetch(&mut self) -> u8 {
-        let memory = self.memory.lock().unwrap();
-        let value = memory.read_from_memory(self.pc);
+        let value = self.read_from_address(self.pc);
         self.pc = u16::wrapping_add(self.pc, 1);
         value
     }
 
     fn read_from_address(&self, address: u16) -> u8 {
         let memory = self.memory.lock().unwrap();
-        memory.read_from_memory(address)
+        memory.read_from_memory(None, address)
     }
 
     fn write_to_address(&mut self, address: u16, value: u8) {
         let mut memory = self.memory.lock().unwrap();
-        memory.write_to_memory(address, value);
+        memory.write_to_memory(None, address, value);
     }
 
     fn pop(&mut self) -> u8 {
-        let memory = self.memory.lock().unwrap();
-        let value: u8 = memory.read_from_memory(self.sp);
+        let value: u8 = self.read_from_address(self.sp);
         self.sp = u16::wrapping_add(self.sp, 1);
         value
     }
     
     fn push(&mut self, value: u8) {
-        let mut memory = self.memory.lock().unwrap();
         self.sp = u16::wrapping_sub(self.sp, 1);
-        memory.write_to_memory(self.sp, value);
+        self.write_to_address(self.sp, value);
     }
 
     fn rlc(&mut self, value: u8) -> u8 {
