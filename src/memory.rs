@@ -1,8 +1,15 @@
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct Memory {
+    rom_banking: bool,
+    enable_ram: bool,
+    mbc1: bool,
+    mbc2: bool,
+    current_rom_bank : u8,
+    current_ram_bank: u8,
+    ram_banks: [u8; 0x8000],
     cartridge: Vec<u8>,
     rom: Vec<u8>,
 }
@@ -44,6 +51,13 @@ impl Memory {
         rom_vec[0xffff] = 0x00;
 
         Memory {
+            rom_banking: false,
+            enable_ram: false,
+            mbc1: false,
+            mbc2: false,
+            current_rom_bank : 1,
+            current_ram_bank: 0,
+            ram_banks: [0; 0x8000],
             cartridge: vec![0; 0x200000],
             rom: rom_vec,
         }

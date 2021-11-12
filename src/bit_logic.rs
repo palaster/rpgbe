@@ -18,7 +18,7 @@ pub fn set_bit_to(on: bool, byte: u8, position: u8) -> u8 {
 pub fn compose_bytes(lower: u8, upper: u8) -> u16 {
     let mut upper16: u16 = upper as u16;
     upper16 <<= 8;
-    (upper16 | lower as u16)
+    upper16 | (lower as u16)
 }
 
 pub fn decompose_bytes(bytes: u16) -> (u8, u8) {
