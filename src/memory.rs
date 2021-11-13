@@ -2,8 +2,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
-use crate::gameboy::{Gameboy, TIMA, TAC};
+use crate::gameboy::{Gameboy, TAC};
 
+#[derive(Clone)]
 pub struct Memory {
     rom_banking: bool,
     enable_ram: bool,
@@ -77,10 +78,10 @@ impl Memory {
         if (address >= 0x4000) && (address <= 0x7fff) {
             let new_address: u16 = address - 0x4000;
             self.cartridge[(new_address + (self.current_rom_bank as u16) * 0x4000) as usize]
-        } else if((address >= 0xa000) && (address <= 0xbfff)) {
+        } else if (address >= 0xa000) && (address <= 0xbfff) {
             let new_address: u16 = address - 0xa000;
             self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize]
-        } else if((address >= 0xfea0) && (address < 0xff00)) {
+        } else if (address >= 0xfea0) && (address < 0xff00) {
             // TODO OAM Corruption Bug
             0xff
         } /* else if(address == 0xff00) {
@@ -112,11 +113,11 @@ impl Memory {
         } else if address == TAC {
             match gameboy {
                 Some(t) => {
-                    let current_freq: u8 = 0 /*t.get_clock_freq()*/;
+                    let current_freq: u8 = t.get_clock_freq();
                     self.rom[address as usize] = value;
-                    let new_freq: u8 = 0 /*t.get_clock_freq()*/;
+                    let new_freq: u8 = t.get_clock_freq();
                     if current_freq != new_freq {
-                        //t.set_clock_freq();
+                        t.set_clock_freq();
                     }
                 },
                 None => {},

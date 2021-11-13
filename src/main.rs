@@ -14,7 +14,6 @@ mod memory;
 mod bit_logic;
 
 use gameboy::Gameboy;
-use cpu::CPU;
 use memory::Memory;
 
 const WIDTH: u16 = 160;
@@ -24,7 +23,7 @@ const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 const CYCLES_PER_SECOND: u64 = 4_194_304;
 const FRAMES_PER_SECOND: f64 = 59.727500569606;
 const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
-const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = ((1000 as f64) / FRAMES_PER_SECOND) * 1_000_000.0;
+const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
 
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  

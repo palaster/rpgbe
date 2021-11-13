@@ -58,6 +58,7 @@ static CB_INSTRUCTION_TIMINGS: [u8; 256] = [
     2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
 ];
 
+#[derive(Clone)]
 pub struct CPU {
     a: u8,
     b: u8,
@@ -67,14 +68,14 @@ pub struct CPU {
     h: u8,
     l: u8,
     sp: u16,
-    pc: u16,
+    pub pc: u16,
     zero: bool,
     subtract: bool,
     half_carry: bool,
     carry: bool,
-    halted: bool,
-    interrupts_enabled: bool,
-    pending_interrupt_enable: bool,
+    pub halted: bool,
+    pub interrupts_enabled: bool,
+    pub pending_interrupt_enable: bool,
     memory: Arc<Mutex<Memory>>,
 }
 
@@ -141,7 +142,7 @@ impl CPU {
         value
     }
     
-    fn push(&mut self, value: u8) {
+    pub fn push(&mut self, value: u8) {
         self.sp = u16::wrapping_sub(self.sp, 1);
         self.write_to_address(self.sp, value);
     }
@@ -318,10 +319,11 @@ impl CPU {
     fn sub_byte(&mut self, value: u8, subtrahend: u8) -> u8 {
         let first: u8 = value;
         let second: u8 = subtrahend;
-        let result: u8 = first - second;
+        let result: u8 = first.wrapping_sub(second);
         self.zero = result == 0;
         self.subtract = true;
-        self.half_carry = ((first & 0xf) - (second & 0xf)) < 0;
+        let signed_result: i16 = (first & 0xf) as i16 - (second & 0xf) as i16;
+        self.half_carry = signed_result < 0;
         self.carry = first < second;
         result
     }
@@ -330,10 +332,11 @@ impl CPU {
         let first: u8 = value;
         let second: u8 = subtrahend;
         let carry: u8 = self.carry as u8;
-        let result: i16 = (first as i16) + (second as i16) + (carry as i16);
+        let result: i16 = (first as i16) - (second as i16) - (carry as i16);
         self.zero = result == 0;
         self.subtract = true;
-        self.half_carry = ((first & 0xf) - (second & 0xf) - carry) < 0;
+        let signed_result: i16 = (first & 0xf) as i16 - (second & 0xf) as i16 - carry as i16;
+        self.half_carry = signed_result < 0;
         self.carry = result < 0;
         result as u8
     }
@@ -368,10 +371,11 @@ impl CPU {
     fn cp_byte(&mut self, value: u8, cping_value: u8) {
         let first: u8 = value;
         let second: u8 = cping_value;
-        let result: u8 = first - second;
+        let result: u8 = first.wrapping_sub(second);
         self.zero = result == 0;
         self.subtract = true;
-        self.half_carry = ((first & 0xf) - (second & 0xf)) < 0;
+        let signed_result: i16 = (first & 0xf) as i16 - (second & 0xf) as i16;
+        self.half_carry = signed_result < 0;
         self.carry = first < second;
     }
 
@@ -2616,8 +2620,8 @@ impl CPU {
                 self.sp = result as u16;
                 self.zero = false;
                 self.subtract = false;
-                self.half_carry = (((sp ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10);
-                self.carry = (((sp ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100);
+                self.half_carry = ((sp ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10;
+                self.carry = ((sp ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100;
             },
             0xe9 => {
                 // JP HL
@@ -2689,8 +2693,8 @@ impl CPU {
                 self.h = upper;
                 self.zero = false;
                 self.subtract = false;
-                self.half_carry = (((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10);
-                self.carry = (((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100);
+                self.half_carry = ((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x10) == 0x10;
+                self.carry = ((self.sp as i32 ^ value ^ (result & 0xFFFF)) & 0x100) == 0x100;
             },
             0xf9 => {
                 // LD SP, HL
