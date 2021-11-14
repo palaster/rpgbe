@@ -1,7 +1,5 @@
-use crate::memory::Memory;
+use crate::MEMORY;
 use crate::bit_logic;
-
-use std::sync::{Arc, Mutex};
 
 static INSTRUCTION_TIMINGS: [u8; 256] = [
     1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
@@ -76,11 +74,11 @@ pub struct CPU {
     pub halted: bool,
     pub interrupts_enabled: bool,
     pub pending_interrupt_enable: bool,
-    memory: Arc<Mutex<Memory>>,
+    pub one_instruction_passed: bool,
 }
 
 impl CPU {
-    pub fn new(memory: Arc<Mutex<Memory>>) -> CPU {
+    pub fn new() -> CPU {
         CPU {
             a: 0x01,
             b: 0x00,
@@ -98,7 +96,7 @@ impl CPU {
             halted: false,
             interrupts_enabled: false,
             pending_interrupt_enable: false,
-            memory: memory,
+            one_instruction_passed: false,
         }
     }
 
@@ -122,28 +120,28 @@ impl CPU {
 
     fn fetch(&mut self) -> u8 {
         let value = self.read_from_address(self.pc);
-        self.pc = u16::wrapping_add(self.pc, 1);
+        self.pc = self.pc.wrapping_add(1);
         value
     }
 
     fn read_from_address(&self, address: u16) -> u8 {
-        let memory = self.memory.lock().unwrap();
-        memory.read_from_memory(None, address)
+        let memory = MEMORY.lock().unwrap();
+        memory.read_from_memory(address)
     }
 
     fn write_to_address(&mut self, address: u16, value: u8) {
-        let mut memory = self.memory.lock().unwrap();
+        let mut memory = MEMORY.lock().unwrap();
         memory.write_to_memory(None, address, value);
     }
 
     fn pop(&mut self) -> u8 {
         let value: u8 = self.read_from_address(self.sp);
-        self.sp = u16::wrapping_add(self.sp, 1);
+        self.sp = self.sp.wrapping_add(1);
         value
     }
     
     pub fn push(&mut self, value: u8) {
-        self.sp = u16::wrapping_sub(self.sp, 1);
+        self.sp = self.sp.wrapping_sub(1);
         self.write_to_address(self.sp, value);
     }
 
@@ -255,20 +253,20 @@ impl CPU {
 
     fn inc_word(lower: &mut u8, upper: &mut u8) {
         let mut word: u16 = bit_logic::compose_bytes(*lower, *upper);
-        word += 1;
+        word = word.wrapping_add(1);
         *upper = (word >> 8) as u8;
         *lower = word as u8;
     }
 
     fn dec_word(lower: &mut u8, upper: &mut u8) {
         let mut word: u16 = bit_logic::compose_bytes(*lower, *upper);
-        word -= 1;
+        word = word.wrapping_sub(1);
         *upper = (word >> 8) as u8;
         *lower = word as u8;
     }
 
     fn inc_byte(&mut self, value: u8) -> u8 {
-        let result = value + 1;
+        let result: u8 = value.wrapping_add(1);
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = (result & 0xf) == 0;
@@ -276,10 +274,10 @@ impl CPU {
     }
 
     fn dec_byte(&mut self, value: u8) -> u8 {
-        let result = value - 1;
+        let result: u8 = value.wrapping_sub(1);
         self.zero = result == 0;
         self.subtract = true;
-        self.half_carry = (result & 0xf) == 0xf;
+        self.half_carry = (result & 0x0f) == 0x0f;
         result
     }
 
@@ -296,8 +294,8 @@ impl CPU {
     fn add_byte(&mut self, value: u8, addend: u8) -> u8 {
         let first: u8 = value;
         let second: u8 = addend;
-        let result: u16 = (first as u16) + (second as u16);
-        self.zero = result == 0;
+        let result: i16 = (first as i16) + (second as i16);
+        self.zero = (result as u8) == 0;
         self.subtract = false;
         self.half_carry = (first & 0xf) + (second & 0xf) > 0xf;
         self.carry = (result & 0x100) != 0;
@@ -308,8 +306,8 @@ impl CPU {
         let first: u8 = value;
         let second: u8 = addend;
         let carry: u8 = self.carry as u8;
-        let result: u16 = (first as u16) + (second as u16) + (carry as u16);
-        self.zero = result == 0;
+        let result: i16 = first as i16 + second as i16 + carry as i16;
+        self.zero = (result as u8) == 0;
         self.subtract = false;
         self.half_carry = ((first & 0xf) + (second & 0xf) + carry) > 0xf;
         self.carry = result > 0xff;
@@ -319,13 +317,13 @@ impl CPU {
     fn sub_byte(&mut self, value: u8, subtrahend: u8) -> u8 {
         let first: u8 = value;
         let second: u8 = subtrahend;
-        let result: u8 = first.wrapping_sub(second);
-        self.zero = result == 0;
+        let result: i16 = first as i16 - second as i16;
+        self.zero = (result as u8) == 0;
         self.subtract = true;
-        let signed_result: i16 = (first & 0xf) as i16 - (second & 0xf) as i16;
+        let signed_result: i16 = (first & 0x0f) as i16 - (second & 0xf) as i16;
         self.half_carry = signed_result < 0;
         self.carry = first < second;
-        result
+        result as u8
     }
 
     fn sbc_byte(&mut self, value: u8, subtrahend: u8) -> u8 {
@@ -413,17 +411,29 @@ impl CPU {
     fn rst(&mut self, value: u8) {
         self.push((self.pc >> 8) as u8);
         self.push(self.pc as u8);
-        self.jp_from_word((0x0 + value) as u16);
+        self.jp_from_word(0x0000 + value as u16);
     }
 
     fn jr(&mut self) {
-        let value: i32 = self.fetch() as i32;
+        let value: i32 = (self.fetch() as i8) as i32;
         self.jp_from_word((self.pc as i32 + value) as u16);
     }
 
     pub fn update(&mut self) -> f64 {
         let instruction = self.fetch();
-        self.execute(instruction)
+        let cycles = self.execute(instruction);
+        if self.pending_interrupt_enable {
+            if self.one_instruction_passed {
+                if !self.interrupts_enabled {
+                    self.interrupts_enabled = true;
+                }
+                self.pending_interrupt_enable = false;
+                self.one_instruction_passed = false;
+            } else {
+                self.one_instruction_passed = true;
+            }
+        }
+        cycles
     }
 
     fn execute_cb(&mut self, instruction: u8) -> f64 {
@@ -1669,7 +1679,7 @@ impl CPU {
                     self.jr();
                     branch_taken = true;
                 } else {
-                    self.pc += 1;
+                    self.pc = self.pc.wrapping_add(1);
                 }
             },
             0x21 => {
@@ -1702,7 +1712,7 @@ impl CPU {
             },
             0x27 => {
                 // DAA
-                let mut correction: u16 = if self.carry { 0x60 } else { 0x00 };
+                let mut correction: u8 = if self.carry { 0x60 } else { 0x00 };
 
                 if self.half_carry || (!self.subtract && ((self.a & 0x0f) > 9)) {
                     correction |= 0x06;
@@ -1712,12 +1722,12 @@ impl CPU {
                 }
 
                 self.a = if self.subtract {
-                    (self.a as u16 - correction) as u8
+                    self.a - correction
                 } else {
-                    (self.a as u16 + correction) as u8
+                    self.a + correction
                 };
 
-                if ((correction << 2) & 0x100) != 0 {
+                if (((correction as u16) << 2) & 0x100) != 0 {
                     self.carry = true;
                 }
                 self.zero = self.a == 0;
@@ -1729,7 +1739,7 @@ impl CPU {
                     self.jr();
                     branch_taken = true;
                 } else {
-                    self.pc += 1;
+                    self.pc = self.pc.wrapping_add(1);
                 }
             },
             0x29 => {
@@ -1773,7 +1783,7 @@ impl CPU {
                     self.jr();
                     branch_taken = true;
                 } else {
-                    self.pc += 1;
+                    self.pc = self.pc.wrapping_add(1);
                 }
             },
             0x31 => {
@@ -1789,7 +1799,7 @@ impl CPU {
             },
             0x33 => {
                 // INC SP
-                self.sp += 1;
+                self.sp = self.sp.wrapping_add(1);
             },
             0x34 => {
                 // INC (HL)
@@ -1822,7 +1832,7 @@ impl CPU {
                     self.jr();
                     branch_taken = true;
                 } else {
-                    self.pc += 1;
+                    self.pc = self.pc.wrapping_add(1);
                 }
             },
             0x39 => {
@@ -1840,7 +1850,7 @@ impl CPU {
             },
             0x3b => {
                 // DEC SP
-                self.sp -= 1;
+                self.sp = self.sp.wrapping_sub(1);
             },
             0x3c => {
                 // INC A
@@ -2413,7 +2423,7 @@ impl CPU {
                     self.jp_from_pc();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xc3 => {
@@ -2426,7 +2436,7 @@ impl CPU {
                     self.call();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xc5 => {
@@ -2460,12 +2470,13 @@ impl CPU {
                     self.jp_from_pc();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xcb => {
                 // Prefix CB
-                return self.execute_cb(instruction);
+                let cb_instruction: u8 = self.fetch();
+                return self.execute_cb(cb_instruction);
             },
             0xcc => {
                 // CALL Z, u16
@@ -2473,7 +2484,7 @@ impl CPU {
                     self.call();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xcd => {
@@ -2507,7 +2518,7 @@ impl CPU {
                     self.jp_from_pc();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xd3 => {
@@ -2519,7 +2530,7 @@ impl CPU {
                     self.call();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xd5 => {
@@ -2554,7 +2565,7 @@ impl CPU {
                     self.jp_from_pc();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xdb => {
@@ -2566,7 +2577,7 @@ impl CPU {
                     self.call();
                     branch_taken = true;
                 } else {
-                    self.pc += 2;
+                    self.pc = self.pc.wrapping_add(2);
                 }
             },
             0xdd => {
@@ -2615,7 +2626,7 @@ impl CPU {
             0xe8 => {
                 // ADD SP, i8
                 let sp: i32 = self.sp as i32;
-                let value: i32 = self.fetch() as i32;
+                let value: i32 = (self.fetch() as i8) as i32;
                 let result: i32 = sp + value;
                 self.sp = result as u16;
                 self.zero = false;
@@ -2686,7 +2697,7 @@ impl CPU {
             },
             0xf8 => {
                 // LD HL, SP + i8
-                let value: i32 = self.fetch() as i32;
+                let value: i32 = (self.fetch() as i8) as i32;
                 let result: i32 = self.sp as i32 + value;
                 let (lower, upper) = bit_logic::decompose_bytes(result as u16);
                 self.l = lower;

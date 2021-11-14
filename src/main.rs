@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate lazy_static;
 extern crate sdl2;
 
 use std::path::PathBuf;
@@ -25,6 +27,10 @@ const FRAMES_PER_SECOND: f64 = 59.727500569606;
 const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
 const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
 
+lazy_static! {
+    pub static ref MEMORY: Arc<Mutex<Memory>> = Arc::new(Mutex::new(Memory::new()));
+}
+
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  
 
@@ -48,13 +54,11 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let memory: Arc<Mutex<Memory>> = Arc::new(Mutex::new(Memory::new()));
-
     {
-        memory.lock().unwrap().load_cartridge(PathBuf::from(rom_path));
+        MEMORY.lock().unwrap().load_cartridge(PathBuf::from(rom_path));
     }
 
-    let mut gameboy: Gameboy = Gameboy::new(memory.clone());
+    let mut gameboy: Gameboy = Gameboy::new();
 
     'running: loop {
         for event in event_pump.poll_iter() {
