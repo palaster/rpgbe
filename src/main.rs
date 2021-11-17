@@ -15,7 +15,9 @@ mod cpu;
 mod memory;
 mod bit_logic;
 
+
 use gameboy::Gameboy;
+use cpu::Cpu;
 use memory::Memory;
 
 const WIDTH: u16 = 160;
@@ -29,36 +31,36 @@ const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1000.0 / FRAMES_PER_SECOND) * 1
 
 lazy_static! {
     pub static ref MEMORY: Arc<Mutex<Memory>> = Arc::new(Mutex::new(Memory::new()));
+    pub static ref GAMEBOY: Arc<Mutex<Gameboy>> = Arc::new(Mutex::new(Gameboy::new()));
+    pub static ref CPU: Arc<Mutex<Cpu>> = Arc::new(Mutex::new(Cpu::new()));
 }
 
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+    let sdl_context = sdl2::init().expect("Couldn't init sdl");
+    let video_subsystem = sdl_context.video().expect("Couldn't init sdl video");
 
     let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
         .position_centered()
         .resizable()
         .build()
-        .unwrap();
+        .expect("Couldn't create window from video");
 
     let mut canvas = window.into_canvas()
         .software()
         .build()
-        .unwrap();
+        .expect("Couldn't create canvas from window");
 
     let texture_creator = canvas.texture_creator();
 
-    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).unwrap();
+    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
     {
-        MEMORY.lock().unwrap().load_cartridge(PathBuf::from(rom_path));
+        MEMORY.lock().expect("Couldn't get memory from main").load_cartridge(PathBuf::from(rom_path));
     }
-
-    let mut gameboy: Gameboy = Gameboy::new();
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -73,12 +75,12 @@ fn main() {
         let start = Instant::now();
         let mut cycles_this_frame: f64 = 0.0;
         while cycles_this_frame <= CYCLES_PER_FRAME {
-            cycles_this_frame += gameboy.update();
+            cycles_this_frame += { let mut gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from main loop"); gameboy.update() };
         }
 
-        texture.update(None, &gameboy.screen_data, (WIDTH * 3).into()).unwrap();
+        texture.update(None, &{ let gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from texture.update"); gameboy.screen_data }, WIDTH as usize * 3).expect("Couldn't update texture from main");
         canvas.clear();
-        canvas.copy(&texture, None, None).unwrap();
+        canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
 
         let elapsed_time = start.elapsed();

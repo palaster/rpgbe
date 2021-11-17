@@ -2,8 +2,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
+use crate::{GAMEBOY, CYCLES_PER_SECOND};
 use crate::bit_logic;
-use crate::gameboy::{Gameboy, TAC};
+use crate::gameboy::TAC;
 
 #[derive(Clone)]
 pub struct Memory {
@@ -62,7 +63,7 @@ impl Memory {
             current_rom_bank : 1,
             current_ram_bank: 0,
             ram_banks: vec![0; 0x8000],
-            cartridge: vec![0; 0x200000],
+            cartridge: Vec::new(),
             rom: rom_vec,
         }
     }
@@ -76,27 +77,34 @@ impl Memory {
     }
 
     pub fn read_from_memory(&self, address: u16) -> u8 {
-        if (address >= 0x4000) && (address <= 0x7fff) {
-            let new_address: u16 = address - 0x4000;
-            self.cartridge[(new_address + (self.current_rom_bank as u16) * 0x4000) as usize]
-        } else if (address >= 0xa000) && (address <= 0xbfff) {
-            let new_address: u16 = address - 0xa000;
-            self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize]
-        } else if (address >= 0xfea0) && (address < 0xff00) {
-            // TODO OAM Corruption Bug
-            0xff
-        } /* else if(address == 0xff00) {
-            return getGamepadState(gameBoy);
-        } */ else {
-            self.rom[address as usize]
+        match address {
+            0x4000..=0x7fff => {
+                let new_address: u16 = address - 0x4000;
+                self.cartridge[(new_address + (self.current_rom_bank as u16) * 0x4000) as usize]
+            },
+            0xa000..=0xbfff => {
+                let new_address: u16 = address - 0xa000;
+                self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize]
+            },
+            0xfea0..=0xfeff => {
+                // TODO OAM Corruption Bug
+                0x0
+            },
+            /*
+            0xff00 => {
+                let mut gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from read_from_memory");
+                gameboy.get_gamepad_state()
+            },
+            */
+            _ => self.rom[address as usize],
         }
     }
 
     fn do_dma_transfer(&mut self, value: u8) {
         let address: u16 = (value as u16) << 8;
         for i in 0..0xa0 {
-            let value: u8 = self.read_from_memory(address + i);
-            self.write_to_memory(None, 0xfe00 + i, value);
+            let read_value: u8 = self.read_from_memory(address + i);
+            self.write_to_memory(0xfe00 + i, read_value);
         }
     }
 
@@ -152,74 +160,83 @@ impl Memory {
     }
 
     fn handle_banking(&mut self, address: u16, value: u8) {
-        if address < 0x2000 {
-            if self.mbc1 || self.mbc2 {
-                self.do_ram_bank_enable(address, value);
-            }
-        } else if (address >= 0x2000) && (address < 0x4000) {
-            if self.mbc1 || self.mbc2 {
-                self.do_change_lo_rom_bank(value);
-            }
-        } else if (address >= 0x4000) && (address < 0x6000) {
-            if self.mbc1 {
-                if self.rom_banking {
-                    self.do_change_hi_rom_bank(value);
-                } else {
-                    self.do_ram_bank_change(value);
+        match address {
+            0..=0x1fff => {
+                if self.mbc1 || self.mbc2 {
+                    self.do_ram_bank_enable(address, value);
                 }
-            }
-        } else if (address >= 0x6000) && (address < 0x8000) {
-            if self.mbc1 {
-                self.do_change_rom_ram_mode(value);
-            }
+            },
+            0x2000..=0x3fff => {
+                if self.mbc1 || self.mbc2 {
+                    self.do_change_lo_rom_bank(value);
+                }
+            },
+            0x4000..=0x5fff => {
+                if self.mbc1 {
+                    if self.rom_banking {
+                        self.do_change_hi_rom_bank(value);
+                    } else {
+                        self.do_ram_bank_change(value);
+                    }
+                }
+            },
+            0x6000..=0x7fff => {
+                if self.mbc1 {
+                    self.do_change_rom_ram_mode(value);
+                }
+            },
+            _ => {},
         }
     }
 
-    pub fn write_to_memory(&mut self, gameboy: Option<&mut Gameboy>, address: u16, value: u8) {
-        if address < 0x8000 {
-            self.handle_banking(address, value);
-        } else if (address >= 0xa000) && (address < 0xc000) {
-            if self.enable_ram {
-                let new_address: u16 = address - 0xa000;
-                self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize] = value;
-            }
-        } else if (address >= 0xfea0) && (address < 0xff00) {
-            // RESTRICTED
-        } else if (address >= 0xc000) && (address < 0xe000) {
-            self.rom[address as usize] = value;
-            if address + 0x2000 <= 0xfdff {
-                self.rom[(address + 0x2000) as usize] = value;
-            }
-        } else if (address >= 0xe000) && (address < 0xfe00) {
-            // RESTRICTED
-            self.rom[address as usize] = value;
-            self.rom[(address - 0x2000) as usize] = value;
-        } else if address == TAC {
-            match gameboy {
-                Some(t) => {
-                    let current_freq: u8 = t.get_clock_freq();
-                    self.rom[address as usize] = value;
-                    let new_freq: u8 = t.get_clock_freq();
-                    if current_freq != new_freq {
-                        t.set_clock_freq();
-                    }
-                },
-                None => {
-                    self.rom[address as usize] = value
-                },
-            }
-        } else if (address == 0xff04) || (address == 0xff44) {
-            if address == 0xff04 {
-                match gameboy {
-                    Some(t) => { t.divider_counter = 0 },
-                    None => {},
+    pub fn write_to_memory(&mut self, address: u16, value: u8) {
+        match address {
+            0..=0x7fff => { self.handle_banking(address, value) },
+            0xa000..=0xbfff => {
+                if self.enable_ram {
+                    let new_address: u16 = address - 0xa000;
+                    self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize] = value
                 }
-            }
-            self.rom[address as usize] = 0;
-        } else if address == 0xff46 {
-            self.do_dma_transfer(value);
-        } else {
-            self.rom[address as usize] = value;
+            },
+            0xfea0..=0xfeff => {},
+            0xc000..=0xdfff => {
+                self.rom[address as usize] = value;
+                if address + 0x2000 <= 0xfdff {
+                    self.rom[(address + 0x2000) as usize] = value
+                }
+            },
+            0xe000..=0xfdff => {
+                self.rom[address as usize] = value;
+                self.rom[(address - 0x2000) as usize] = value
+            },
+            TAC => {
+                let current_freq: u8 = self.read_from_memory(TAC) & 0x3;
+                self.rom[address as usize] = value;
+                let new_freq: u8 = self.read_from_memory(TAC) & 0x3;
+                if current_freq != new_freq {
+                    let mut gameboy = GAMEBOY.lock().expect("Couldn't get Gameboy from write_to_memory TAC check");
+                    match new_freq {
+                        0 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 4096 },
+                        1 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 262144 },
+                        2 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 65536 },
+                        3 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 16382 },
+                        _ => { },
+                    }
+                }
+            },
+            0xff04 | 0xff44 => {
+                /* TEST if needed
+                if address == 0xff04 {
+                    let mut gameboy = GAMEBOY.lock().expect("Couldn't get Gameboy from write_to_memory 0xff04 divider counter check");
+                    gameboy.divider_counter = 0;
+                }
+                */
+                self.rom[address as usize] = 0
+            },
+            0xff46 => {
+                self.do_dma_transfer(value)
+            },
+            _ => { self.rom[address as usize] = value },
         }
     }
 }
