@@ -27,7 +27,7 @@ const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 const CYCLES_PER_SECOND: u64 = 4_194_304;
 const FRAMES_PER_SECOND: f64 = 59.727500569606;
 const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
-const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
+const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
 
 lazy_static! {
     pub static ref MEMORY: Arc<Mutex<Memory>> = Arc::new(Mutex::new(Memory::new()));
@@ -78,7 +78,29 @@ fn main() {
             cycles_this_frame += { let mut gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from main loop"); gameboy.update() };
         }
 
-        texture.update(None, &{ let gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from texture.update"); gameboy.screen_data }, WIDTH as usize * 3).expect("Couldn't update texture from main");
+        /*
+        let mut temp_screen_data: [u8; SCREEN_DATA_SIZE as usize] = [0; SCREEN_DATA_SIZE as usize];
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                /*
+                let final_x: u16 = x.wrapping_mul(WIDTH).wrapping_mul(3);
+                let final_y: u16 = y.wrapping_mul(3);
+                let xy: u16 = final_x.wrapping_add(final_y);
+                */
+                let final_x: u32 = x as u32 * 3;
+                let final_y: u32 = (WIDTH as u32) * y as u32 * 3;
+                let xy = final_x.wrapping_add(final_y);
+                temp_screen_data[(xy) as usize] = 0x0;
+                temp_screen_data[(xy + 1) as usize] = 0xff;
+                temp_screen_data[(xy + 2) as usize] = 0xff;
+            }
+        }
+        */
+
+        texture.update(None, &{ let gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from texture.update"); gameboy.screen_data }, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
+        /*
+        texture.update(None, &temp_screen_data, WIDTH as usize * 3).expect("Couldn't update texture from main");
+        */
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();

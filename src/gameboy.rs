@@ -63,16 +63,6 @@ impl Gameboy {
         cpu.halted = is_halted;
     }
 
-    fn cpu_update() -> f64 {
-        let mut cpu = CPU.lock().expect("Couldn't get CPU from update");
-        cpu.update()
-    }
-
-    fn set_pc(new_pc: u16) {
-        let mut cpu = CPU.lock().expect("Couldn't get CPU from set_pc");
-        cpu.pc = new_pc;
-    }
-
     fn read_from_address(address: u16) -> u8 {
         let memory = MEMORY.lock().expect("Couldn't get Memory from Gameboy::read_from_address");
         memory.read_from_memory(address)
@@ -96,7 +86,8 @@ impl Gameboy {
     pub fn update(&mut self) -> f64 {
         let mut cycles: f64 = 4.0;
         if !Gameboy::is_halted() {
-            cycles = Gameboy::cpu_update() * 4.0;
+            let mut cpu = CPU.lock().expect("Couldn't get CPU from update");
+            cycles = cpu.update() * 4.0;
         }
         {
             if Gameboy::raw_read_from_rom(0xff02) == 0x81 {
@@ -236,8 +227,7 @@ impl Gameboy {
 
     fn render_tiles(&mut self) {
         let mut unsig: bool = true;
-        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (Gameboy::read_from_address(0xff40), Gameboy::read_from_address(0xff42),
-            Gameboy::read_from_address(0xff43), Gameboy::read_from_address(0xff4a), Gameboy::read_from_address(0xff4b).wrapping_sub(7));
+        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (Gameboy::read_from_address(0xff40), Gameboy::read_from_address(0xff42), Gameboy::read_from_address(0xff43), Gameboy::read_from_address(0xff4a), Gameboy::read_from_address(0xff4b).wrapping_sub(7));
 
         let mut using_window: bool = false;
 
@@ -273,16 +263,17 @@ impl Gameboy {
         } else {
             Gameboy::read_from_address(0xff44).wrapping_sub(window_y)
         };
-        let tile_row: u16 = (y_pos / 8).wrapping_mul(32) as u16;
+
+        let tile_row: u16 = y_pos.wrapping_div(8).wrapping_mul(32) as u16;
         for pixel in 0..WIDTH {
-            let mut x_pos: u8 = (pixel as u8).wrapping_add(scroll_x);
+            let mut x_pos: u8 = pixel.wrapping_add(scroll_x as u16) as u8;
             if using_window {
                 if pixel >= (window_x as u16) {
-                    x_pos = (pixel as u8).wrapping_sub(window_x);
+                    x_pos = pixel.wrapping_sub(window_x as u16) as u8;
                 }
             }
-            let tile_column: u16 = (x_pos / 8) as u16;
-            let tile_address: u16 = background_memory + tile_row + tile_column;
+            let tile_column: u16 = x_pos.wrapping_div(8) as u16;
+            let tile_address: u16 = background_memory.wrapping_add(tile_row).wrapping_add(tile_column);
             let tile_num: i16 = if unsig {
                 (Gameboy::read_from_address(tile_address) as i8) as i16
             } else {
@@ -290,23 +281,23 @@ impl Gameboy {
             };
             let mut tile_location: u16 = tile_data;
             if unsig {
-                tile_location += (tile_num * 16) as u16;
+                tile_location += tile_num.wrapping_mul(16) as u16;
             } else {
-                tile_location += ((tile_num + 128) * 16) as u16;
+                tile_location += tile_num.wrapping_add(128).wrapping_mul(16) as u16;
             }
-            let mut line: u8 = y_pos % 8;
-            line *= 2;
+            let mut line: u8 = y_pos.wrapping_rem(8);
+            line = line.wrapping_mul(2);
             let (data_1, data_2): (u8, u8) = {
-                let temp_address: u16 = tile_location + line as u16;
-                (Gameboy::read_from_address(temp_address), Gameboy::read_from_address(temp_address + 1))
+                let temp_address: u16 = tile_location.wrapping_add(line as u16);
+                (Gameboy::read_from_address(temp_address), Gameboy::read_from_address(temp_address.wrapping_add(1)))
             };
 
-            let mut color_bit: i32 = (x_pos % 8) as i32;
-            color_bit -= 7;
-            color_bit *= -1;
-            let mut color_num: u8 = bit_logic::bit_value(data_2, color_bit as u8);
-            color_num <<= 1; 
-            color_num |= bit_logic::bit_value(data_1, color_bit as u8);
+            let mut color_bit: i16 = x_pos.wrapping_rem(8) as i16;
+            color_bit = color_bit.wrapping_sub(7);
+            color_bit = color_bit.wrapping_mul(-1);
+            let mut color_num: u8 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
+            color_num <<= 1;
+            color_num |= if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
 
             let color: Color = self.get_color(0xff47, color_num);
             let (red, green, blue): (u8, u8, u8) = match color {
@@ -323,9 +314,9 @@ impl Gameboy {
 
             self.scanline_bg[pixel as usize] = matches!(color, Color::White);
 
-            let x: u16 = (finally as u16).wrapping_mul(WIDTH).wrapping_mul(3);
-            let y: u16 = pixel.wrapping_mul(3);
-            let xy: u16 = x.wrapping_add(y);
+            let y: u32 = (finally as u32).wrapping_mul(WIDTH as u32).wrapping_mul(3);
+            let x: u32 = (pixel as u32).wrapping_mul(3);
+            let xy: u32 = x.wrapping_add(y);
             self.screen_data[xy as usize] = red;
             self.screen_data[xy.wrapping_add(1) as usize] = green;
             self.screen_data[xy.wrapping_add(2) as usize] = blue;
@@ -336,10 +327,10 @@ impl Gameboy {
         let use_8x16: bool = bit_logic::check_bit(Gameboy::read_from_address(0xff40), 2);
         for sprite in 0..40 {
             let index: u8 = sprite * 4;
-            let temp_address: u16 = 0xfe00 + index as u16;
+            let temp_address: u16 = 0xfe00 + (index as u16);
             let (y_pos, x_pos, tile_location, attributes): (u8, u8, u8, u8) =
-                (Gameboy::read_from_address(temp_address) - 16,
-                Gameboy::read_from_address(temp_address + 1) - 8,
+                (Gameboy::read_from_address(temp_address).wrapping_sub(16),
+                Gameboy::read_from_address(temp_address + 1).wrapping_sub(8),
                 Gameboy::read_from_address(temp_address + 2),
                 Gameboy::read_from_address(temp_address + 3));
             
@@ -350,9 +341,9 @@ impl Gameboy {
 
             let y_size: i32 = if use_8x16 { 16 } else { 8 };
 
-            if (scanline >= y_pos as i32) && (scanline < (y_pos as i32 + y_size)) {
+            if (scanline >= (y_pos as i32)) && (scanline < (y_pos as i32 + y_size)) {
                 
-                let mut line: i32 = scanline - y_pos as i32;
+                let mut line: i32 = scanline.wrapping_sub(y_pos as i32);
 
                 if y_flip  {
                     line -= y_size;
@@ -360,17 +351,18 @@ impl Gameboy {
                 }
 
                 line *= 2;
-                let data_address: u16 = (0x8000 + (tile_location as u16 * 16)) + (line as u16);
+                let data_address: u16 = (0x8000 + (tile_location.wrapping_mul(16)) as u16) + (line as u16);
                 let (data_1, data_2): (u8, u8) = (Gameboy::read_from_address(data_address), Gameboy::read_from_address(data_address + 1));
                 for tile_pixel in (0..=7).rev() {
+                    println!("{}", tile_pixel);
                     let mut color_bit: i16 = tile_pixel;
                     if x_flip {
                         color_bit = color_bit.wrapping_sub(7);
                         color_bit = color_bit.wrapping_mul(-1);
                     }
-                    let mut color_num: u8 = bit_logic::bit_value(data_2, color_bit as u8);
+                    let mut color_num: u8 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
                     color_num <<= 1;
-                    color_num |= bit_logic::bit_value(data_1, color_bit as u8);
+                    color_num |= if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
                     
                     let color_address: u16 = if bit_logic::check_bit(attributes, 4) { 0xff49 } else { 0xff48 };
                     let color: Color = self.get_color(color_address, color_num);
@@ -389,15 +381,15 @@ impl Gameboy {
                     let mut x_pix: i16 = 0 - tile_pixel;
                     x_pix += 7;
 
-                    let pixel: i32 = (x_pos + x_pix as u8) as i32;
+                    let pixel: i32 = (x_pos as i16 + x_pix) as i32;
                     if (scanline < 0) || (scanline > 143) || (pixel < 0) || (pixel > 159) {
                         continue;
                     }
 
                     if self.scanline_bg[pixel as usize] || priority {
-                        let x: u16 = (scanline as u16).wrapping_mul(WIDTH).wrapping_mul(3);
-                        let y: u16 = pixel.wrapping_mul(3) as u16;
-                        let xy: u16 = x.wrapping_add(y);
+                        let y: i64 = (scanline as i64).wrapping_mul(WIDTH as i64).wrapping_mul(3);
+                        let x: i64 = (pixel as i64).wrapping_mul(3);
+                        let xy: i64 = x.wrapping_add(y);
                         self.screen_data[xy as usize] = red;
                         self.screen_data[xy.wrapping_add(1) as usize] = green;
                         self.screen_data[xy.wrapping_add(2) as usize] = blue;
@@ -450,19 +442,17 @@ impl Gameboy {
         let req: u8 = Gameboy::read_from_address(0xff0f);
         Gameboy::write_to_address(0xff0f, bit_logic::reset_bit(req, interrupt_id));
     
-        {
-            let mut cpu = CPU.lock().expect("Couldn't get Cpu from service_interrupt");
-            let pc: u16 = cpu.pc;
-            cpu.push((pc >> 8) as u8);
-            cpu.push(pc as u8);
-        }
+        let mut cpu = CPU.lock().expect("Couldn't get Cpu from service_interrupt");
+        let pc: u16 = cpu.pc;
+        cpu.push((pc >> 8) as u8);
+        cpu.push(pc as u8);
 
         match interrupt_id {
-            0 => { Gameboy::set_pc(0x40) },
-            1 => { Gameboy::set_pc(0x48) },
-            2 => { Gameboy::set_pc(0x50) },
-            3 => { Gameboy::set_pc(0x58) },
-            4 => { Gameboy::set_pc(0x60) },
+            0 => { cpu.pc = 0x40 },
+            1 => { cpu.pc = 0x48 },
+            2 => { cpu.pc = 0x50 },
+            3 => { cpu.pc = 0x58 },
+            4 => { cpu.pc = 0x60 },
             _ => {},
         }
     }

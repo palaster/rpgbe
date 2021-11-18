@@ -74,6 +74,11 @@ impl Memory {
         for i in 0..0x8000 {
             self.rom[i] = self.cartridge[i];
         }
+        match self.cartridge[0x147] {
+            1 | 2 | 3 => { self.mbc1 = true },
+            5 | 6 => { self.mbc2 = true },
+            _ => {},
+        }
     }
 
     pub fn read_from_memory(&self, address: u16) -> u8 {
