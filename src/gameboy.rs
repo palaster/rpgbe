@@ -3,7 +3,7 @@ use crate::Cpu;
 use crate::Memory;
 use crate::bit_logic;
 
-const IS_DEBUG_MODE: bool = false;
+const IS_DEBUG_MODE: bool = true;
 
 pub const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
@@ -56,17 +56,13 @@ impl Gameboy {
     }
 
     pub fn key_pressed(&mut self, key: u8) {
-        let mut previously_unset: bool = false;
-
-        if !bit_logic::check_bit(self.memory.gamepad_state, key) {
-            previously_unset = true;
-        }
+        let previously_unset: bool = !bit_logic::check_bit(self.memory.gamepad_state, key);
 
         self.memory.gamepad_state = bit_logic::reset_bit(self.memory.gamepad_state, key);
 
         let button: bool = key > 3;
 
-        let key_req: u8 = self.memory.rom[0xff00 as usize];
+        let key_req: u8 = self.raw_read_from_rom(0xff00);
         let mut should_request_interrupt: bool = false;
 
         if button && !bit_logic::check_bit(key_req, 5) {
@@ -130,13 +126,13 @@ impl Gameboy {
                 println!("{}", self.cpu.debug());
             }
         }
-        /*
-        if self.raw_read_from_rom(0xff02) == 0x81 {
-            let c: char = self.raw_read_from_rom(0xff01) as char;
-            print!("{}", c);
-            self.raw_write_to_rom(0xff02, 0x0);
+        if IS_DEBUG_MODE {
+            if self.raw_read_from_rom(0xff02) == 0x81 {
+                let c: char = self.raw_read_from_rom(0xff01) as char;
+                print!("{}", c);
+                self.raw_write_to_rom(0xff02, 0x0);
+            }
         }
-        */
         self.update_timer(cycles);
         self.update_graphics(cycles);
         cycles += self.do_interrupts();
@@ -380,7 +376,7 @@ impl Gameboy {
 
             let y_size: i32 = if use_8x16 { 16 } else { 8 };
 
-            if (scanline >= (y_pos as i32)) && (scanline < (y_pos as i32 + y_size)) {
+            if (scanline >= (y_pos as i32)) && (scanline < ((y_pos as i32).wrapping_add(y_size))) {
                 
                 let mut line: i32 = scanline.wrapping_sub(y_pos as i32);
 
@@ -390,20 +386,20 @@ impl Gameboy {
                 }
 
                 line *= 2;
-                let data_address: u16 = (0x8000 + (tile_location.wrapping_mul(16)) as u16) + (line as u16);
-                let (data_1, data_2): (u8, u8) = (self.read_from_address(data_address), self.read_from_address(data_address + 1));
-                for tile_pixel in (0..=7).rev() {
-                    let mut color_bit: i32 = tile_pixel;
+                let data_address: u16 = 0x8000 + (tile_location as u16).wrapping_mul(16) + line as u16;
+                let (data_1, data_2): (u8, u8) = (self.read_from_address(data_address), self.read_from_address(data_address.wrapping_add(1)));
+                for tile_pixel in (0u8..=7).rev() {
+                    let mut color_bit: i32 = tile_pixel as i32;
                     if x_flip {
                         color_bit -= 7;
                         color_bit *= -1;
                     }
-                    let mut color_num: u8 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
+                    let mut color_num: u32 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
                     color_num <<= 1;
                     color_num |= if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
                     
                     let color_address: u16 = if bit_logic::check_bit(attributes, 4) { 0xff49 } else { 0xff48 };
-                    let color: Color = self.get_color(color_address, color_num);
+                    let color: Color = self.get_color(color_address, color_num as u8);
 
                     if matches!(color, Color::White) {
                         continue;
@@ -416,11 +412,10 @@ impl Gameboy {
                         _ => (0, 0, 0),
                     };
 
-                    let mut x_pix: i32 = 0 - tile_pixel;
-                    x_pix += 7;
+                    let x_pix: u32 = 7_u32.wrapping_sub(tile_pixel as u32);
 
-                    let pixel: i32 = x_pos as i32 + x_pix;
-                    if (scanline < 0) || (scanline > 143) || (pixel < 0) || (pixel > 159) {
+                    let pixel: u32 = (x_pos as u32).wrapping_add(x_pix);
+                    if (scanline < 0) || (scanline > 143) || (pixel > 159) {
                         continue;
                     }
 

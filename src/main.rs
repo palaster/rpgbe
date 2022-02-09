@@ -106,27 +106,7 @@ fn main() {
             cycles_this_frame += gameboy.update() as f64;
         }
 
-        /*
-        let mut temp_screen_data: [u8; SCREEN_DATA_SIZE as usize] = [0; SCREEN_DATA_SIZE as usize];
-        for y in 0..HEIGHT {
-            for x in 0..WIDTH {
-                /*
-                let final_x: u16 = x.wrapping_mul(WIDTH).wrapping_mul(3);
-                let final_y: u16 = y.wrapping_mul(3);
-                let xy: u16 = final_x.wrapping_add(final_y);
-                */
-                let final_x: u32 = (x as u32).wrapping_mul(3);
-                let final_y: u32 = (WIDTH as u32).wrapping_mul(y as u32).wrapping_mul(3);
-                let xy = final_x.wrapping_add(final_y);
-                temp_screen_data[xy as usize] = 0xff;
-                temp_screen_data[xy.wrapping_add(1) as usize] = 0x00;
-                temp_screen_data[xy.wrapping_add(2) as usize] = 0xff;
-            }
-        }
-        */
-
         texture.update(None, &gameboy.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
-        //texture.update(None, &temp_screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
