@@ -31,8 +31,6 @@ pub struct Gameboy {
     scanline_counter: i32,
     pub timer_counter: i32,
     pub divider_counter: i32,
-    halt_bug: bool,
-    ei_halt_bug: bool,
     pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
     cpu: Cpu,
@@ -46,8 +44,6 @@ impl Gameboy {
             scanline_counter: SCANLINE_COUNTER_START as i32,
             timer_counter: 0,
             divider_counter: 0,
-            halt_bug: false,
-            ei_halt_bug: false,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
             cpu: cpu,
@@ -491,10 +487,9 @@ impl Gameboy {
         let (req, enabled): (u8, u8) = (self.read_from_address(0xff0f), self.read_from_address(0xffff));
         let potential_for_interrupts: u8 = req & enabled;
         if potential_for_interrupts == 0 {
-            if self.ei_halt_bug { self.ei_halt_bug = false; }
             return 0;
         }
-        if self.cpu.interrupts_enabled || self.ei_halt_bug {
+        if self.cpu.interrupts_enabled {
             self.cpu.halted = false;
             for i in 0..5 {
                 if bit_logic::check_bit(req, i) && bit_logic::check_bit(enabled, i) {
@@ -502,13 +497,8 @@ impl Gameboy {
                     return 20;
                 }
             }
-            self.ei_halt_bug = false;
-        } else if self.cpu.halted {
-            self.cpu.halted = false;
-            self.halt_bug = true;
-        } else {
-            self.cpu.halted = false;
         }
+        self.cpu.halted = false;
         0
     }
 }
