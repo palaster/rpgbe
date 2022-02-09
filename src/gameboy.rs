@@ -1,15 +1,18 @@
-use crate::{WIDTH, SCREEN_DATA_SIZE, CYCLES_PER_SECOND, MEMORY, CPU};
+use crate::{ WIDTH, SCREEN_DATA_SIZE, FREQUENCY_4096, FREQUENCY_262144, FREQUENCY_65536, FREQUENCY_16384 };
+use crate::Cpu;
+use crate::Memory;
 use crate::bit_logic;
+
+const IS_DEBUG_MODE: bool = false;
 
 pub const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
 pub const TAC: u16 = 0xff07;
 
-const VERTICAL_BLANK_SCAN_LINE: u16 = 144;
-const VERTICAL_BLANK_SCAN_LINE_MAX: u16 = 153;
+const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
+const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
 const SCANLINE_COUNTER_START: u16 = 456;
 
-#[derive(Copy, Clone)]
 enum Color {
     White,
     LightGray,
@@ -17,85 +20,123 @@ enum Color {
     Black,
 }
 
-#[derive(Clone)]
+pub enum MemoryWriteResult {
+    None,
+    ResetDividerCounter,
+    SetTimerCounter,
+}
+
 pub struct Gameboy {
+    target_pc: i32,
     scanline_counter: i32,
     pub timer_counter: i32,
     pub divider_counter: i32,
     halt_bug: bool,
     ei_halt_bug: bool,
-    gamepad_state: u8,
     pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
+    cpu: Cpu,
+    memory: Memory,
 }
 
 impl Gameboy {
-    pub fn new() -> Gameboy {
+    pub fn new(cpu: Cpu, memory: Memory) -> Gameboy {
         Gameboy {
+            target_pc: -1,
             scanline_counter: SCANLINE_COUNTER_START as i32,
             timer_counter: 0,
             divider_counter: 0,
             halt_bug: false,
             ei_halt_bug: false,
-            gamepad_state: 0xff,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
+            cpu: cpu,
+            memory: memory,
         }
     }
 
-    fn is_interrupts_enabled() -> bool {
-        let cpu = CPU.lock().expect("Couldn't get CPU from is_interrupts_enabled");
-        cpu.interrupts_enabled
-    }
+    pub fn key_pressed(&mut self, key: u8) {
+        let mut previously_unset: bool = false;
 
-    fn set_is_interrupts_enabled(new_interrupts_enable: bool) {
-        let mut cpu = CPU.lock().expect("Couldn't get CPU from set_is_interrupts_enabled");
-        cpu.interrupts_enabled = new_interrupts_enable;
-    }
-
-    fn is_halted() -> bool {
-        let cpu = CPU.lock().expect("Couldn't get CPU from is_halted");
-        cpu.halted
-    }
-
-    fn set_halted(is_halted: bool) {
-        let mut cpu = CPU.lock().expect("Couldn't get CPU from set_halted");
-        cpu.halted = is_halted;
-    }
-
-    fn read_from_address(address: u16) -> u8 {
-        let memory = MEMORY.lock().expect("Couldn't get Memory from Gameboy::read_from_address");
-        memory.read_from_memory(address)
-    }
-
-    fn write_to_address(address: u16, value: u8) {
-        let mut memory = MEMORY.lock().expect("Couldn't get Memory from Gameboy::write_to_address");
-        memory.write_to_memory(address, value);
-    }
-
-    fn raw_read_from_rom(address: u16) -> u8 {
-        let memory = MEMORY.lock().expect("Couldn't get Memory from raw_read_from_rom");
-        memory.rom[address as usize]
-    }
-
-    fn raw_write_to_rom(address: u16, value: u8) {
-        let mut memory = MEMORY.lock().expect("Couldn't get Memory from raw_write_to_rom");
-        memory.rom[address as usize] = value;
-    }
-
-    pub fn update(&mut self) -> f64 {
-        let mut cycles: f64 = 4.0;
-        if !Gameboy::is_halted() {
-            let mut cpu = CPU.lock().expect("Couldn't get CPU from update");
-            cycles = cpu.update() * 4.0;
+        if !bit_logic::check_bit(self.memory.gamepad_state, key) {
+            previously_unset = true;
         }
-        {
-            if Gameboy::raw_read_from_rom(0xff02) == 0x81 {
-                let c: char = Gameboy::raw_read_from_rom(0xff01) as char;
-                print!("{}", c);
-                Gameboy::raw_write_to_rom(0xff02, 0x0);
+
+        self.memory.gamepad_state = bit_logic::reset_bit(self.memory.gamepad_state, key);
+
+        let button: bool = key > 3;
+
+        let key_req: u8 = self.memory.rom[0xff00 as usize];
+        let mut should_request_interrupt: bool = false;
+
+        if button && !bit_logic::check_bit(key_req, 5) {
+            should_request_interrupt = true;
+        } else if !button && !bit_logic::check_bit(key_req, 4) {
+            should_request_interrupt = true;
+        }
+
+        if should_request_interrupt && !previously_unset {
+            self.request_interrupt(4);
+        }
+    }
+
+    pub fn key_released(&mut self, key: u8) {
+        self.memory.gamepad_state = bit_logic::set_bit(self.memory.gamepad_state, key);
+    }
+
+    fn read_from_address(&self, address: u16) -> u8 {
+        self.memory.read_from_memory(address)
+    }
+
+    fn write_to_address(&mut self, address: u16, value: u8) {
+        for memory_result in self.memory.write_to_memory(address, value) {
+            match memory_result {
+                MemoryWriteResult::ResetDividerCounter => {
+                    self.divider_counter = 0
+                },
+                MemoryWriteResult::SetTimerCounter => {
+                    self.set_clock_freq()
+                },
+                _ => { },
             }
         }
+    }
+
+    fn raw_read_from_rom(&self, address: u16) -> u8 {
+        self.memory.rom[address as usize]
+    }
+
+    fn raw_write_to_rom(&mut self, address: u16, value: u8) {
+        self.memory.rom[address as usize] = value;
+    }
+
+    pub fn update(&mut self) -> u8 {
+        let mut cycles: u8 = 4;
+        if !self.cpu.halted {
+            if IS_DEBUG_MODE {
+                if self.target_pc == -1 {
+                    let mut line = String::new();
+                    println!("Enter new PC to run to:");
+                    std::io::stdin().read_line(&mut line).unwrap();
+                    if !line.is_empty() {
+                        self.target_pc = line.trim().parse().unwrap_or(-1);
+                    }
+                } else if self.target_pc == (self.cpu.pc as i32) {
+                    self.target_pc = -1;
+                }
+            }
+            cycles = self.cpu.update(&mut self.memory, IS_DEBUG_MODE) * 4;
+            if IS_DEBUG_MODE {
+                println!("{}", self.cpu.debug());
+            }
+        }
+        /*
+        if self.raw_read_from_rom(0xff02) == 0x81 {
+            let c: char = self.raw_read_from_rom(0xff01) as char;
+            print!("{}", c);
+            self.raw_write_to_rom(0xff02, 0x0);
+        }
+        */
         self.update_timer(cycles);
         self.update_graphics(cycles);
         cycles += self.do_interrupts();
@@ -103,63 +144,63 @@ impl Gameboy {
     }
 
     fn is_clock_enabled(&self) -> bool {
-        bit_logic::check_bit(Gameboy::read_from_address(TAC), 2)
+        bit_logic::check_bit(self.read_from_address(TAC), 2)
     }
 
     pub fn get_clock_freq(&self) -> u8 {
-        Gameboy::read_from_address(TAC) & 0x3
+        self.read_from_address(TAC) & 0x3
     }
 
-    pub fn set_clock_freq(&mut self, new_freq: u8) {
-        match new_freq {
-            0 => { self.timer_counter = CYCLES_PER_SECOND as i32 / 4096 },
-            1 => { self.timer_counter = CYCLES_PER_SECOND as i32 / 262144 },
-            2 => { self.timer_counter = CYCLES_PER_SECOND as i32 / 65536 },
-            3 => { self.timer_counter = CYCLES_PER_SECOND as i32 / 16382 },
+    pub fn set_clock_freq(&mut self) {
+        match self.get_clock_freq() {
+            0 => { self.timer_counter = FREQUENCY_4096 as i32 },
+            1 => { self.timer_counter = FREQUENCY_262144 as i32 },
+            2 => { self.timer_counter = FREQUENCY_65536 as i32 },
+            3 => { self.timer_counter = FREQUENCY_16384 as i32 },
             _ => { },
         }
     }
 
-    fn do_divider_register(&mut self, cycles: f64) {
+    fn do_divider_register(&mut self, cycles: u8) {
         self.divider_counter += cycles as i32;
         if self.divider_counter >= 255 {
             self.divider_counter = 0;
-            Gameboy::raw_write_to_rom(0xff04, Gameboy::raw_read_from_rom(0xff04).wrapping_add(1));
+            self.raw_write_to_rom(0xff04, self.raw_read_from_rom(0xff04).wrapping_add(1));
         }
     }
 
-    fn update_timer(&mut self, cycles: f64) {
+    fn update_timer(&mut self, cycles: u8) {
         self.do_divider_register(cycles);
         if self.is_clock_enabled() {
             self.timer_counter -= cycles as i32;
             if self.timer_counter <= 0 {
-                self.set_clock_freq({ self.get_clock_freq() });
-                let (tima, tma): (u8, u8) = (Gameboy::read_from_address(TIMA), Gameboy::read_from_address(TMA));
+                self.set_clock_freq();
+                let (tima, tma): (u8, u8) = (self.read_from_address(TIMA), self.read_from_address(TMA));
                 if tima == 255 {
-                    Gameboy::write_to_address(TIMA, tma);
+                    self.write_to_address(TIMA, tma);
                     self.request_interrupt(2);
                 } else {
-                    Gameboy::write_to_address(TIMA, tima.wrapping_add(1))
+                    self.write_to_address(TIMA, tima.wrapping_add(1))
                 }
             }
         }
     }
 
     fn is_lcd_enabled(&self) -> bool {
-        bit_logic::check_bit(Gameboy::read_from_address(0xff40), 7)
+        bit_logic::check_bit(self.read_from_address(0xff40), 7)
     }
 
     fn set_lcd_status(&mut self) {
-        let mut status: u8 = Gameboy::read_from_address(0xff41);
+        let mut status: u8 = self.read_from_address(0xff41);
         if !self.is_lcd_enabled() {
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
-            Gameboy::raw_write_to_rom(0xff44, 0);
+            self.raw_write_to_rom(0xff44, 0);
             status &= 252;
             status = bit_logic::set_bit(status, 0);
-            Gameboy::write_to_address(0xff41, status);
+            self.write_to_address(0xff41, status);
             return;
         }
-        let current_line: u8 = Gameboy::read_from_address(0xff44);
+        let current_line: u8 = self.read_from_address(0xff44);
         let current_mode: u8 = status & 0x3;
         let mode: u8;
         let mut req_int: bool = false;
@@ -170,8 +211,8 @@ impl Gameboy {
             status = bit_logic::reset_bit(status, 1);
             req_int = bit_logic::check_bit(status, 4);
         } else {
-            let mode_2_bounds: i32 = 456 - 80;
-            let mode_3_bounds: i32 = mode_2_bounds - 172;
+            let mode_2_bounds: i32 = 376; // 456 - 80
+            let mode_3_bounds: i32 = 204; // mode_2_bounds - 172
             if self.scanline_counter >= mode_2_bounds {
                 mode = 2;
                 status = bit_logic::set_bit(status, 1);
@@ -191,7 +232,7 @@ impl Gameboy {
         if req_int && current_mode != mode {
             self.request_interrupt(1);
         }
-        if current_line == Gameboy::read_from_address(0xff45) {
+        if current_line == self.read_from_address(0xff45) {
             status = bit_logic::set_bit(status, 2);
             if bit_logic::check_bit(status, 6) {
                 self.request_interrupt(1);
@@ -199,11 +240,11 @@ impl Gameboy {
         } else {
             status = bit_logic::reset_bit(status, 2);
         }
-        Gameboy::write_to_address(0xff41, status);
+        self.write_to_address(0xff41, status);
     }
 
     fn get_color(&self, address: u16, color_num: u8) -> Color {
-        let palette: u8 = Gameboy::read_from_address(address);
+        let palette: u8 = self.read_from_address(address);
 
         let (hi, lo) = match color_num {
             0 => (1, 0),
@@ -213,8 +254,8 @@ impl Gameboy {
             _ => (0, 0),
         };
 
-        let mut color: i32 = (bit_logic::bit_value(palette, hi) << 1) as i32;
-        color |= bit_logic::bit_value(palette, lo) as i32;
+        let mut color: i32 = (if bit_logic::check_bit(palette, hi) { 1 } else { 0 } << 1) as i32;
+        color |= if bit_logic::check_bit(palette, lo) { 1 } else { 0 } as i32;
         
         match color {
             0 => Color::White,
@@ -227,12 +268,12 @@ impl Gameboy {
 
     fn render_tiles(&mut self) {
         let mut unsig: bool = true;
-        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (Gameboy::read_from_address(0xff40), Gameboy::read_from_address(0xff42), Gameboy::read_from_address(0xff43), Gameboy::read_from_address(0xff4a), Gameboy::read_from_address(0xff4b).wrapping_sub(7));
+        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (self.read_from_address(0xff40), self.read_from_address(0xff42), self.read_from_address(0xff43), self.read_from_address(0xff4a), self.read_from_address(0xff4b).wrapping_sub(7));
 
         let mut using_window: bool = false;
 
         if bit_logic::check_bit(lcd_control, 5) {
-            if window_y <= Gameboy::read_from_address(0xff44) {
+            if window_y <= self.read_from_address(0xff44) {
                 using_window = true;
             }
         }
@@ -259,25 +300,23 @@ impl Gameboy {
         };
 
         let y_pos: u8 = if !using_window {
-            scroll_y.wrapping_add(Gameboy::read_from_address(0xff44))
+            scroll_y.wrapping_add(self.read_from_address(0xff44))
         } else {
-            Gameboy::read_from_address(0xff44).wrapping_sub(window_y)
+            self.read_from_address(0xff44).wrapping_sub(window_y)
         };
 
         let tile_row: u16 = y_pos.wrapping_div(8).wrapping_mul(32) as u16;
         for pixel in 0..WIDTH {
             let mut x_pos: u8 = pixel.wrapping_add(scroll_x as u16) as u8;
-            if using_window {
-                if pixel >= (window_x as u16) {
-                    x_pos = pixel.wrapping_sub(window_x as u16) as u8;
-                }
+            if using_window && pixel >= (window_x as u16) {
+                x_pos = pixel.wrapping_sub(window_x as u16) as u8;
             }
             let tile_column: u16 = x_pos.wrapping_div(8) as u16;
             let tile_address: u16 = background_memory.wrapping_add(tile_row).wrapping_add(tile_column);
             let tile_num: i16 = if unsig {
-                (Gameboy::read_from_address(tile_address) as i8) as i16
+                self.read_from_address(tile_address) as i16
             } else {
-                Gameboy::read_from_address(tile_address) as i16
+                (self.read_from_address(tile_address) as i8) as i16
             };
             let mut tile_location: u16 = tile_data;
             if unsig {
@@ -286,20 +325,20 @@ impl Gameboy {
                 tile_location += tile_num.wrapping_add(128).wrapping_mul(16) as u16;
             }
             let mut line: u8 = y_pos.wrapping_rem(8);
-            line = line.wrapping_mul(2);
+            line *= 2;
             let (data_1, data_2): (u8, u8) = {
                 let temp_address: u16 = tile_location.wrapping_add(line as u16);
-                (Gameboy::read_from_address(temp_address), Gameboy::read_from_address(temp_address.wrapping_add(1)))
+                (self.read_from_address(temp_address), self.read_from_address(temp_address.wrapping_add(1)))
             };
 
-            let mut color_bit: i16 = x_pos.wrapping_rem(8) as i16;
+            let mut color_bit: i32 = x_pos.wrapping_rem(8) as i32;
             color_bit = color_bit.wrapping_sub(7);
             color_bit = color_bit.wrapping_mul(-1);
-            let mut color_num: u8 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
+            let mut color_num: i32 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
             color_num <<= 1;
             color_num |= if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
 
-            let color: Color = self.get_color(0xff47, color_num);
+            let color: Color = self.get_color(0xff47, color_num as u8);
             let (red, green, blue): (u8, u8, u8) = match color {
                 Color::White => (255, 255, 255),
                 Color::LightGray => (0xcc, 0xcc, 0xcc),
@@ -307,7 +346,7 @@ impl Gameboy {
                 _ => (0, 0, 0),
             };
 
-            let finally: u8 = Gameboy::read_from_address(0xff44);
+            let finally: u8 = self.read_from_address(0xff44);
             if finally > 143 || pixel > 159 {
                 continue;
             }
@@ -324,20 +363,20 @@ impl Gameboy {
     }
 
     fn render_sprites(&mut self) {
-        let use_8x16: bool = bit_logic::check_bit(Gameboy::read_from_address(0xff40), 2);
+        let use_8x16: bool = bit_logic::check_bit(self.read_from_address(0xff40), 2);
         for sprite in 0..40 {
             let index: u8 = sprite * 4;
             let temp_address: u16 = 0xfe00 + (index as u16);
             let (y_pos, x_pos, tile_location, attributes): (u8, u8, u8, u8) =
-                (Gameboy::read_from_address(temp_address).wrapping_sub(16),
-                Gameboy::read_from_address(temp_address + 1).wrapping_sub(8),
-                Gameboy::read_from_address(temp_address + 2),
-                Gameboy::read_from_address(temp_address + 3));
+                (self.read_from_address(temp_address).wrapping_sub(16),
+                self.read_from_address(temp_address + 1).wrapping_sub(8),
+                self.read_from_address(temp_address + 2),
+                self.read_from_address(temp_address + 3));
             
             let y_flip: bool = bit_logic::check_bit(attributes, 6);
             let x_flip: bool = bit_logic::check_bit(attributes, 5);
             let priority: bool = !bit_logic::check_bit(attributes, 7);
-            let scanline: i32 = Gameboy::read_from_address(0xff44) as i32;
+            let scanline: i32 = self.read_from_address(0xff44) as i32;
 
             let y_size: i32 = if use_8x16 { 16 } else { 8 };
 
@@ -352,13 +391,13 @@ impl Gameboy {
 
                 line *= 2;
                 let data_address: u16 = (0x8000 + (tile_location.wrapping_mul(16)) as u16) + (line as u16);
-                let (data_1, data_2): (u8, u8) = (Gameboy::read_from_address(data_address), Gameboy::read_from_address(data_address + 1));
+                let (data_1, data_2): (u8, u8) = (self.read_from_address(data_address), self.read_from_address(data_address + 1));
                 for tile_pixel in (0..=7).rev() {
                     println!("{}", tile_pixel);
-                    let mut color_bit: i16 = tile_pixel;
+                    let mut color_bit: i32 = tile_pixel;
                     if x_flip {
-                        color_bit = color_bit.wrapping_sub(7);
-                        color_bit = color_bit.wrapping_mul(-1);
+                        color_bit -= 7;
+                        color_bit *= -1;
                     }
                     let mut color_num: u8 = if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 };
                     color_num <<= 1;
@@ -378,10 +417,10 @@ impl Gameboy {
                         _ => (0, 0, 0),
                     };
 
-                    let mut x_pix: i16 = 0 - tile_pixel;
+                    let mut x_pix: i32 = 0 - tile_pixel;
                     x_pix += 7;
 
-                    let pixel: i32 = (x_pos as i16 + x_pix) as i32;
+                    let pixel: i32 = x_pos as i32 + x_pix;
                     if (scanline < 0) || (scanline > 143) || (pixel < 0) || (pixel > 159) {
                         continue;
                     }
@@ -400,7 +439,7 @@ impl Gameboy {
     }
 
     fn draw_scanline(&mut self) {
-        let control: u8 =  Gameboy::read_from_address(0xff40);
+        let control: u8 =  self.read_from_address(0xff40);
         if bit_logic::check_bit(control, 0) {
             self.render_tiles();
         }
@@ -409,7 +448,7 @@ impl Gameboy {
         }
     }
 
-    fn update_graphics(&mut self, cycles: f64) {
+    fn update_graphics(&mut self, cycles: u8) {
         self.set_lcd_status();
         if self.is_lcd_enabled() {
             self.scanline_counter -= cycles as i32;
@@ -417,68 +456,65 @@ impl Gameboy {
             return;
         }
         if self.scanline_counter <= 0 {
-            let current_line: u16 = {
-                Gameboy::raw_write_to_rom(0xff44, Gameboy::raw_read_from_rom(0xff44).wrapping_add(1));
-                Gameboy::read_from_address(0xff44) as u16
+            let current_line: u8 = {
+                self.raw_write_to_rom(0xff44, self.raw_read_from_rom(0xff44).wrapping_add(1));
+                self.read_from_address(0xff44)
             };
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
             if current_line == VERTICAL_BLANK_SCAN_LINE {
                 self.request_interrupt(0);
             } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
-                Gameboy::raw_write_to_rom(0xff44, 0);
+                self.raw_write_to_rom(0xff44, 0);
             } else if current_line < VERTICAL_BLANK_SCAN_LINE {
                 self.draw_scanline();
             }
         }
     }
 
-    fn request_interrupt(&self, interrupt_id: u8) {
-        let new_req: u8 = bit_logic::set_bit(Gameboy::read_from_address(0xff0f), interrupt_id);
-        Gameboy::write_to_address(0xff0f, new_req);
+    fn request_interrupt(&mut self, interrupt_id: u8) {
+        self.write_to_address(0xff0f, bit_logic::set_bit(self.read_from_address(0xff0f), interrupt_id));
     }
 
     fn service_interrupt(&mut self, interrupt_id: u8) {
-        Gameboy::set_is_interrupts_enabled(false);
-        let req: u8 = Gameboy::read_from_address(0xff0f);
-        Gameboy::write_to_address(0xff0f, bit_logic::reset_bit(req, interrupt_id));
+        self.cpu.interrupts_enabled = false;
+        self.write_to_address(0xff0f, bit_logic::reset_bit(self.read_from_address(0xff0f), interrupt_id));
     
-        let mut cpu = CPU.lock().expect("Couldn't get Cpu from service_interrupt");
-        let pc: u16 = cpu.pc;
-        cpu.push((pc >> 8) as u8);
-        cpu.push(pc as u8);
+        let pc: u16 = self.cpu.pc;
+        self.cpu.push(&mut self.memory, (pc >> 8) as u8);
+        self.cpu.push(&mut self.memory, pc as u8);
 
         match interrupt_id {
-            0 => { cpu.pc = 0x40 },
-            1 => { cpu.pc = 0x48 },
-            2 => { cpu.pc = 0x50 },
-            3 => { cpu.pc = 0x58 },
-            4 => { cpu.pc = 0x60 },
+            0 => { self.cpu.pc = 0x40 },
+            1 => { self.cpu.pc = 0x48 },
+            2 => { self.cpu.pc = 0x50 },
+            3 => { self.cpu.pc = 0x58 },
+            4 => { self.cpu.pc = 0x60 },
             _ => {},
         }
     }
 
-    fn do_interrupts(&mut self) -> f64 {
-        let (req, enabled): (u8, u8) = (Gameboy::read_from_address(0xff0f), Gameboy::read_from_address(0xffff));
+    fn do_interrupts(&mut self) -> u8 {
+        let (req, enabled): (u8, u8) = (self.read_from_address(0xff0f), self.read_from_address(0xffff));
         let potential_for_interrupts: u8 = req & enabled;
         if potential_for_interrupts == 0 {
             if self.ei_halt_bug { self.ei_halt_bug = false; }
-            return 0.0;
+            return 0;
         }
-        if Gameboy::is_interrupts_enabled() || self.ei_halt_bug {
-            Gameboy::set_halted(false);
+        if self.cpu.interrupts_enabled || self.ei_halt_bug {
+            self.cpu.halted = false;
             for i in 0..5 {
                 if bit_logic::check_bit(req, i) && bit_logic::check_bit(enabled, i) {
                     self.service_interrupt(i);
-                    return 20.0;
+                    return 20;
                 }
             }
             self.ei_halt_bug = false;
-        } else if Gameboy::is_halted() {
-            Gameboy::set_halted(false);
+        } else if self.cpu.halted {
+            self.cpu.halted = false;
             self.halt_bug = true;
         } else {
-            Gameboy::set_halted(false);
+            self.cpu.halted = false;
         }
-        0.0
+        0
     }
 }

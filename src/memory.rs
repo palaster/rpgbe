@@ -2,12 +2,11 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
-use crate::{GAMEBOY, CYCLES_PER_SECOND};
 use crate::bit_logic;
-use crate::gameboy::TAC;
+use crate::gameboy::{ MemoryWriteResult, TAC};
 
-#[derive(Clone)]
 pub struct Memory {
+    pub gamepad_state: u8,
     rom_banking: bool,
     enable_ram: bool,
     mbc1: bool,
@@ -56,6 +55,7 @@ impl Memory {
         rom_vec[0xffff] = 0x00;
 
         Memory {
+            gamepad_state: 0xff,
             rom_banking: false,
             enable_ram: false,
             mbc1: false,
@@ -81,43 +81,53 @@ impl Memory {
         }
     }
 
+    fn get_gamepad_state(&self) -> u8 {
+        let mut res: u8 = self.rom[0xff00 as usize];
+        res ^= 0xff;
+        if !bit_logic::check_bit(res, 4) {
+            let mut top_gamepad: u8 = self.gamepad_state >> 4;
+            top_gamepad |= 0xf0;
+            res &= top_gamepad;
+        } else if !bit_logic::check_bit(res, 5) {
+            let mut bottom_gamepad: u8 = self.gamepad_state & 0xf;
+            bottom_gamepad |= 0xf0;
+            res &= bottom_gamepad;
+        }
+        res
+    }
+
     pub fn read_from_memory(&self, address: u16) -> u8 {
         match address {
             0x4000..=0x7fff => {
                 let new_address: u16 = address - 0x4000;
-                self.cartridge[(new_address + (self.current_rom_bank as u16) * 0x4000) as usize]
+                self.cartridge[(new_address.wrapping_add((self.current_rom_bank as u16).wrapping_mul(0x4000))) as usize]
             },
             0xa000..=0xbfff => {
                 let new_address: u16 = address - 0xa000;
-                self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize]
+                self.ram_banks[(new_address.wrapping_add((self.current_ram_bank as u16).wrapping_mul(0x2000))) as usize]
             },
             0xfea0..=0xfeff => {
-                // TODO OAM Corruption Bug
-                0x0
+                0xff
             },
-            /*
             0xff00 => {
-                let mut gameboy = GAMEBOY.lock().expect("Couldn't get gameboy from read_from_memory");
-                gameboy.get_gamepad_state()
+                self.get_gamepad_state()
             },
-            */
             _ => self.rom[address as usize],
         }
     }
 
-    fn do_dma_transfer(&mut self, value: u8) {
+    fn do_dma_transfer(&mut self, value: u8) -> Vec<MemoryWriteResult> {
         let address: u16 = (value as u16) << 8;
+        let mut memory_results: Vec<MemoryWriteResult> = Vec::new();
         for i in 0..0xa0 {
-            let read_value: u8 = self.read_from_memory(address + i);
-            self.write_to_memory(0xfe00 + i, read_value);
+            memory_results.append(&mut self.write_to_memory(0xfe00 + i, self.read_from_memory(address + i)));
         }
+        memory_results
     }
 
     fn do_ram_bank_enable(&mut self, address: u16, value: u8) {
-        if self.mbc2 {
-            if bit_logic::bit_value(address as u8, 4) == 1 {
-                return;
-            }
+        if self.mbc2 && bit_logic::bit_value(address as u8, 4) == 1 {
+            return;
         }
         let test_data: u8 = value & 0xf;
         if test_data == 0xa {
@@ -194,7 +204,8 @@ impl Memory {
         }
     }
 
-    pub fn write_to_memory(&mut self, address: u16, value: u8) {
+    pub fn write_to_memory(&mut self, address: u16, value: u8) -> Vec<MemoryWriteResult> {
+        let memory_write_results: Vec<MemoryWriteResult> = vec![MemoryWriteResult::None];
         match address {
             0..=0x7fff => { self.handle_banking(address, value) },
             0xa000..=0xbfff => {
@@ -219,29 +230,18 @@ impl Memory {
                 self.rom[address as usize] = value;
                 let new_freq: u8 = self.read_from_memory(TAC) & 0x3;
                 if current_freq != new_freq {
-                    let mut gameboy = GAMEBOY.lock().expect("Couldn't get Gameboy from write_to_memory TAC check");
-                    match new_freq {
-                        0 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 4096 },
-                        1 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 262144 },
-                        2 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 65536 },
-                        3 => { gameboy.timer_counter = CYCLES_PER_SECOND as i32 / 16382 },
-                        _ => { },
-                    }
+                    return vec![MemoryWriteResult::SetTimerCounter];
                 }
             },
             0xff04 | 0xff44 => {
-                /* TEST if needed
-                if address == 0xff04 {
-                    let mut gameboy = GAMEBOY.lock().expect("Couldn't get Gameboy from write_to_memory 0xff04 divider counter check");
-                    gameboy.divider_counter = 0;
-                }
-                */
-                self.rom[address as usize] = 0
+                self.rom[address as usize] = 0;
+                if address == 0xff04 { return vec![MemoryWriteResult::ResetDividerCounter]; }
             },
             0xff46 => {
-                self.do_dma_transfer(value)
+                return self.do_dma_transfer(value);
             },
             _ => { self.rom[address as usize] = value },
         }
+        memory_write_results
     }
 }
