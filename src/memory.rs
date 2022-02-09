@@ -106,12 +106,8 @@ impl Memory {
                 let new_address: u16 = address - 0xa000;
                 self.ram_banks[(new_address.wrapping_add((self.current_ram_bank as u16).wrapping_mul(0x2000))) as usize]
             },
-            0xfea0..=0xfeff => {
-                0xff
-            },
-            0xff00 => {
-                self.get_gamepad_state()
-            },
+            0xfea0..=0xfeff => 0xff,
+            0xff00 => self.get_gamepad_state(),
             _ => self.rom[address as usize],
         }
     }

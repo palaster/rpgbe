@@ -1,7 +1,9 @@
 use crate::bit_logic;
 use crate::Memory;
 
-static INSTRUCTION_TIMINGS: [u8; 256] = [
+const IS_CPU_DEBUG_MODE: bool = false;
+
+const INSTRUCTION_TIMINGS: [u8; 256] = [
     1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
     1,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
     2,3,2,2,1,1,2,1,2,2,2,2,1,1,2,1,
@@ -19,7 +21,7 @@ static INSTRUCTION_TIMINGS: [u8; 256] = [
     3,3,2,0,0,4,2,4,4,1,4,0,0,0,2,4,
     3,3,2,1,0,4,2,4,3,2,4,1,0,0,2,4,
 ];
-static BRANCH_INSTRUCTION_TIMINGS: [u8; 256] = [
+const BRANCH_INSTRUCTION_TIMINGS: [u8; 256] = [
     1,3,2,2,1,1,2,1,5,2,2,2,1,1,2,1,
     1,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
     3,3,2,2,1,1,2,1,3,2,2,2,1,1,2,1,
@@ -37,7 +39,7 @@ static BRANCH_INSTRUCTION_TIMINGS: [u8; 256] = [
     3,3,2,0,0,4,2,4,4,1,4,0,0,0,2,4,
     3,3,2,1,0,4,2,4,3,2,4,1,0,0,2,4,
 ];
-static CB_INSTRUCTION_TIMINGS: [u8; 256] = [
+const CB_INSTRUCTION_TIMINGS: [u8; 256] = [
     2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
     2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
     2,2,2,2,2,2,4,2,2,2,2,2,2,2,4,2,
@@ -406,9 +408,9 @@ impl Cpu {
         self.jp_from_word(self.pc.wrapping_add(value));
     }
 
-    pub fn update(&mut self, memory: &mut Memory, debug: bool) -> u8 {
+    pub fn update(&mut self, memory: &mut Memory) -> u8 {
         let instruction: u8 = self.fetch(memory);
-        let cycles = self.execute(memory, instruction, debug);
+        let cycles = self.execute(memory, instruction);
         if self.pending_interrupt_enable {
             if self.one_instruction_passed {
                 if !self.interrupts_enabled {
@@ -1509,55 +1511,55 @@ impl Cpu {
         CB_INSTRUCTION_TIMINGS[usize::from(instruction)]
     }
 
-    fn execute(&mut self, memory: &mut Memory, instruction: u8, debug: bool) -> u8 {
+    fn execute(&mut self, memory: &mut Memory, instruction: u8) -> u8 {
         let mut branch_taken: bool = false;
         match instruction {
             0x00 => {
                 // NOP
-                if debug { println!("NOP"); }
+                if IS_CPU_DEBUG_MODE { println!("NOP"); }
             },
             0x01 => {
                 // LD BC, u16
-                if debug { println!("LD BC, u16"); }
+                if IS_CPU_DEBUG_MODE { println!("LD BC, u16"); }
                 let lower: u8 = self.fetch(memory);
                 let upper: u8 = self.fetch(memory);
                 Cpu::ld_word(&mut self.c, &mut self.b, lower, upper);
             },
             0x02 => {
                 // LD (BC), A
-                if debug { println!("LD (BC), A"); }
+                if IS_CPU_DEBUG_MODE { println!("LD (BC), A"); }
                 memory.write_to_memory(bit_logic::compose_bytes(self.c, self.b), self.a);
             },
             0x03 => {
                 // INC BC
-                if debug { println!("INC BC"); }
+                if IS_CPU_DEBUG_MODE { println!("INC BC"); }
                 Cpu::inc_word(&mut self.c, &mut self.b);
             },
             0x04 => {
                 // INC B
-                if debug { println!("INC B"); }
+                if IS_CPU_DEBUG_MODE { println!("INC B"); }
                 self.b = self.inc_byte(self.b);
             },
             0x05 => {
                 // DEC B
-                if debug { println!("DEC B"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC B"); }
                 self.b = self.dec_byte(self.b);
             },
             0x06 => {
                 // LD B, u8
-                if debug { println!("LD B, u8"); }
+                if IS_CPU_DEBUG_MODE { println!("LD B, u8"); }
                 let value = self.fetch(memory);
                 Cpu::ld_byte(&mut self.b, value);
             },
             0x07 => {
                 // RLCA
-                if debug { println!("RLCA"); }
+                if IS_CPU_DEBUG_MODE { println!("RLCA"); }
                 self.a = self.rlc(self.a);
                 self.zero = false;
             },
             0x08 => {
                 // LD (u16), SP
-                if debug { println!("LD (u16), SP"); }
+                if IS_CPU_DEBUG_MODE { println!("LD (u16), SP"); }
                 let lower = self.fetch(memory);
                 let upper = self.fetch(memory);
                 let address = bit_logic::compose_bytes(lower, upper);
@@ -1566,129 +1568,129 @@ impl Cpu {
             },
             0x09 => {
                 // ADD HL, BC
-                if debug { println!("ADD HL, BC"); }
+                if IS_CPU_DEBUG_MODE { println!("ADD HL, BC"); }
                 let (lower, upper) = self.add_word(self.l, self.h, self.c, self.b);
                 self.l = lower;
                 self.h = upper;
             },
             0x0a => {
                 // LD A, (BC)
-                if debug { println!("LD A, (BC)"); }
+                if IS_CPU_DEBUG_MODE { println!("LD A, (BC)"); }
                 let value: u8 = memory.read_from_memory(bit_logic::compose_bytes(self.c, self.b));
                 Cpu::ld_byte(&mut self.a, value);
             },
             0x0b => {
                 // DEC BC
-                if debug { println!("DEC BC"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC BC"); }
                 Cpu::dec_word(&mut self.c, &mut self.b);
             },
             0x0c => {
                 // INC C
-                if debug { println!("INC C"); }
+                if IS_CPU_DEBUG_MODE { println!("INC C"); }
                 self.c = self.inc_byte(self.c);
             },
             0x0d => {
                 // DEC C
-                if debug { println!("DEC C"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC C"); }
                 self.c = self.dec_byte(self.c);
             },
             0x0e => {
                 // LD C, u8
-                if debug { println!("LD C, u8"); }
+                if IS_CPU_DEBUG_MODE { println!("LD C, u8"); }
                 let value = self.fetch(memory);
                 Cpu::ld_byte(&mut self.c, value);
             },
             0x0f => {
                 // RRCA
-                if debug { println!("RRCA"); }
+                if IS_CPU_DEBUG_MODE { println!("RRCA"); }
                 self.a = self.rrc(self.a);
                 self.zero = false;
             },
             0x10 => {
                 // STOP
-                if debug { println!("STOP"); }
+                if IS_CPU_DEBUG_MODE { println!("STOP"); }
             },
             0x11 => {
                 // LD DE, u16
-                if debug { println!("LD DE, u16"); }
+                if IS_CPU_DEBUG_MODE { println!("LD DE, u16"); }
                 let lower: u8 = self.fetch(memory);
                 let upper: u8 = self.fetch(memory);
                 Cpu::ld_word(&mut self.e, &mut self.d, lower, upper);
             },
             0x12 => {
                 // LD (DE), A
-                if debug { println!("LD (DE), A"); }
+                if IS_CPU_DEBUG_MODE { println!("LD (DE), A"); }
                 memory.write_to_memory(bit_logic::compose_bytes(self.e, self.d), self.a);
             },
             0x13 => {
                 // INC DE
-                if debug { println!("INC DE"); }
+                if IS_CPU_DEBUG_MODE { println!("INC DE"); }
                 Cpu::inc_word(&mut self.e, &mut self.d);
             },
             0x14 => {
                 // INC D
-                if debug { println!("INC D"); }
+                if IS_CPU_DEBUG_MODE { println!("INC D"); }
                 self.d = self.inc_byte(self.d);
             },
             0x15 => {
                 // DEC D
-                if debug { println!("DEC D"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC D"); }
                 self.d = self.dec_byte(self.d);
             },
             0x16 => {
                 // LD D, u8
-                if debug { println!("LD D, u8"); }
+                if IS_CPU_DEBUG_MODE { println!("LD D, u8"); }
                 let value: u8 = self.fetch(memory);
                 Cpu::ld_byte(&mut self.d, value);
             },
             0x17 => {
                 // RLA
-                if debug { println!("RLA"); }
+                if IS_CPU_DEBUG_MODE { println!("RLA"); }
                 self.a = self.rl(self.a);
                 self.zero = false;
             },
             0x18 => {
                 // JR i8
-                if debug { println!("JR i8"); }
+                if IS_CPU_DEBUG_MODE { println!("JR i8"); }
                 self.jr(memory);
             },
             0x19 => {
                 // ADD HL, DE
-                if debug { println!("ADD HL, DE"); }
+                if IS_CPU_DEBUG_MODE { println!("ADD HL, DE"); }
                 let (lower, upper) = self.add_word(self.l, self.h, self.e, self.d);
                 self.l = lower;
                 self.h = upper;
             },
             0x1a => {
                 // LD A, (DE)
-                if debug { println!("LD A, (DE)"); }
+                if IS_CPU_DEBUG_MODE { println!("LD A, (DE)"); }
                 let value: u8 = memory.read_from_memory(bit_logic::compose_bytes(self.e, self.d));
                 Cpu::ld_byte(&mut self.a, value);
             },
             0x1b => {
                 // DEC DE
-                if debug { println!("DEC DE"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC DE"); }
                 Cpu::dec_word(&mut self.e, &mut self.d);
             },
             0x1c => {
                 // INC E
-                if debug { println!("INC E"); }
+                if IS_CPU_DEBUG_MODE { println!("INC E"); }
                 self.e = self.inc_byte(self.e);
             },
             0x1d => {
                 // DEC E
-                if debug { println!("DEC E"); }
+                if IS_CPU_DEBUG_MODE { println!("DEC E"); }
                 self.e = self.dec_byte(self.e);
             },
             0x1e => {
                 // LD E, u8
-                if debug { println!("LD E, u8"); }
+                if IS_CPU_DEBUG_MODE { println!("LD E, u8"); }
                 let value: u8 = self.fetch(memory);
                 Cpu::ld_byte(&mut self.e, value);
             },
             0x1f => {
                 // RRA
-                if debug { println!("RRA"); }
+                if IS_CPU_DEBUG_MODE { println!("RRA"); }
                 self.a = self.rr(self.a);
                 self.zero = false;
             },

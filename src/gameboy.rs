@@ -125,7 +125,7 @@ impl Gameboy {
                     self.target_pc = -1;
                 }
             }
-            cycles = self.cpu.update(&mut self.memory, IS_DEBUG_MODE) * 4;
+            cycles = self.cpu.update(&mut self.memory) * 4;
             if IS_DEBUG_MODE {
                 println!("{}", self.cpu.debug());
             }
@@ -305,7 +305,7 @@ impl Gameboy {
             self.read_from_address(0xff44).wrapping_sub(window_y)
         };
 
-        let tile_row: u16 = y_pos.wrapping_div(8).wrapping_mul(32) as u16;
+        let tile_row: u16 = (y_pos as u16).wrapping_div(8).wrapping_mul(32);
         for pixel in 0..WIDTH {
             let mut x_pos: u8 = pixel.wrapping_add(scroll_x as u16) as u8;
             if using_window && pixel >= (window_x as u16) {
@@ -393,7 +393,6 @@ impl Gameboy {
                 let data_address: u16 = (0x8000 + (tile_location.wrapping_mul(16)) as u16) + (line as u16);
                 let (data_1, data_2): (u8, u8) = (self.read_from_address(data_address), self.read_from_address(data_address + 1));
                 for tile_pixel in (0..=7).rev() {
-                    println!("{}", tile_pixel);
                     let mut color_bit: i32 = tile_pixel;
                     if x_flip {
                         color_bit -= 7;
