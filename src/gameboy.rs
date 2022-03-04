@@ -3,7 +3,7 @@ use crate::Cpu;
 use crate::Memory;
 use crate::bit_logic;
 
-const IS_DEBUG_MODE: bool = true;
+const IS_DEBUG_MODE: bool = false;
 
 pub const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
@@ -105,19 +105,19 @@ impl Gameboy {
     pub fn update(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
-            if IS_DEBUG_MODE {
-                if self.target_pc == -1 {
-                    let mut line = String::new();
-                    println!("Enter new PC to run to:");
-                    std::io::stdin().read_line(&mut line).unwrap();
-                    if !line.is_empty() {
-                        self.target_pc = line.trim().parse().unwrap_or(-1);
-                    }
-                } else if self.target_pc == (self.cpu.pc as i32) {
-                    self.target_pc = -1;
+            let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
+            cycles = new_cycles * 4;
+            for memory_result in memory_write_results {
+                match memory_result {
+                    MemoryWriteResult::ResetDividerCounter => {
+                        self.divider_counter = 0
+                    },
+                    MemoryWriteResult::SetTimerCounter => {
+                        self.set_clock_freq()
+                    },
+                    _ => { },
                 }
             }
-            cycles = self.cpu.update(&mut self.memory) * 4;
             if IS_DEBUG_MODE {
                 println!("{}", self.cpu.debug());
             }
@@ -127,6 +127,16 @@ impl Gameboy {
                 let c: char = self.raw_read_from_rom(0xff01) as char;
                 print!("{}", c);
                 self.raw_write_to_rom(0xff02, 0x0);
+            }
+            if self.target_pc == -1 {
+                let mut line = String::new();
+                println!("Enter new PC to run to:");
+                std::io::stdin().read_line(&mut line).unwrap();
+                if !line.is_empty() {
+                    self.target_pc = line.trim().parse().unwrap_or(-1);
+                }
+            } else if self.target_pc == (self.cpu.pc as i32) {
+                self.target_pc = -1;
             }
         }
         self.update_timer(cycles);
