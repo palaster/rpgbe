@@ -60,7 +60,7 @@ impl Memory {
             enable_ram: false,
             mbc1: false,
             mbc2: false,
-            current_rom_bank : 1,
+            current_rom_bank: 1,
             current_ram_bank: 0,
             ram_banks: vec![0; 0x8000],
             cartridge: Vec::new(),
@@ -84,12 +84,10 @@ impl Memory {
     fn get_gamepad_state(&self) -> u8 {
         let mut res: u8 = self.rom[0xff00 as usize] ^ 0xff;
         if !bit_logic::check_bit(res, 4) {
-            let mut top_gamepad: u8 = self.gamepad_state >> 4;
-            top_gamepad |= 0xf0;
+            let top_gamepad: u8 = (self.gamepad_state >> 4) | 0xf0;
             res &= top_gamepad;
         } else if !bit_logic::check_bit(res, 5) {
-            let mut bottom_gamepad: u8 = self.gamepad_state & 0xf;
-            bottom_gamepad |= 0xf0;
+            let bottom_gamepad: u8 = (self.gamepad_state & 0xf) | 0xf0;
             res &= bottom_gamepad;
         }
         res

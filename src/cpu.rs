@@ -1555,7 +1555,7 @@ impl Cpu {
             0x06 => {
                 // LD B, u8
                 if IS_CPU_DEBUG_MODE { println!("LD B, u8"); }
-                let value = self.fetch(memory);
+                let value: u8 = self.fetch(memory);
                 Cpu::ld_byte(&mut self.b, value);
             },
             0x07 => {
@@ -1604,7 +1604,7 @@ impl Cpu {
             0x0e => {
                 // LD C, u8
                 if IS_CPU_DEBUG_MODE { println!("LD C, u8"); }
-                let value = self.fetch(memory);
+                let value: u8 = self.fetch(memory);
                 Cpu::ld_byte(&mut self.c, value);
             },
             0x0f => {
@@ -1898,7 +1898,7 @@ impl Cpu {
             },
             0x40 => {
                 // LD B, B
-                let value = self.b;
+                let value: u8 = self.b;
                 Cpu::ld_byte(&mut self.b, value);
             },
             0x41 => {
@@ -1936,7 +1936,7 @@ impl Cpu {
             },
             0x49 => {
                 // LD C, C
-                let value = self.c;
+                let value: u8 = self.c;
                 Cpu::ld_byte(&mut self.c, value);
             },
             0x4a => {
@@ -1974,7 +1974,7 @@ impl Cpu {
             },
             0x52 => {
                 // LD D, D
-                let value = self.d;
+                let value: u8 = self.d;
                 Cpu::ld_byte(&mut self.d, value);
             },
             0x53 => {
@@ -2012,7 +2012,7 @@ impl Cpu {
             },
             0x5b => {
                 // LD E, E
-                let value = self.e;
+                let value: u8 = self.e;
                 Cpu::ld_byte(&mut self.e, value);
             },
             0x5c => {
@@ -2050,7 +2050,7 @@ impl Cpu {
             },
             0x64 => {
                 // LD H, H
-                let value = self.h;
+                let value: u8 = self.h;
                 Cpu::ld_byte(&mut self.h, value);
             },
             0x65 => {
@@ -2088,7 +2088,7 @@ impl Cpu {
             },
             0x6d => {
                 // LD L, L
-                let value = self.l;
+                let value: u8 = self.l;
                 Cpu::ld_byte(&mut self.l, value);
             },
             0x6e => {
@@ -2163,7 +2163,7 @@ impl Cpu {
             },
             0x7f => {
                 // LD A, A
-                let value = self.a;
+                let value: u8 = self.a;
                 Cpu::ld_byte(&mut self.a, value);
             },
             0x80 => {
@@ -2582,7 +2582,7 @@ impl Cpu {
             0xd9 => {
                 // RETI
                 self.ret(memory);
-                self.interrupts_enabled = false;
+                self.interrupts_enabled = true;
             },
             0xda => {
                 // JP C, u16
