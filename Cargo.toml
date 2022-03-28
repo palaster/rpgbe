@@ -12,4 +12,3 @@ bench = false
 
 [dependencies]
 lazy_static = "0.1.15"
-sdl2 = "0.35.1"

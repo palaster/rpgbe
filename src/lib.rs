@@ -4,6 +4,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ops::Deref;
@@ -1499,6 +1500,20 @@ lazy_static! {
     static ref INPUT_STATE_CB: Arc<Mutex<retro_input_state_t>> = Arc::new(Mutex::new(None));
 
     static ref GAME_BOY: Arc<Mutex<Option<Gameboy>>> = Arc::new(Mutex::new(None));
+    static ref BUTTON_STATES: Arc<Mutex<HashMap<String, bool>>> = {
+        Arc::new(Mutex::new(
+            HashMap::from([
+                (String::from("b"), false),
+                (String::from("a"), false),
+                (String::from("start"), false),
+                (String::from("select"), false),
+                (String::from("up"), false),
+                (String::from("down"), false),
+                (String::from("left"), false),
+                (String::from("right"), false),
+            ])
+        ))
+    };
 }
 
 #[no_mangle]
@@ -1511,10 +1526,8 @@ pub extern "C" fn retro_set_environment(arg1: retro_environment_t) {
     let mut logging = retro_log_callback { log: None, };
     let logging_ptr: *mut ::std::os::raw::c_void = &mut logging as *mut _ as *mut ::std::os::raw::c_void;
     if unsafe { cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, logging_ptr) } {
-        {
-            let mut log_cb = LOG_CB.lock().expect("Couldn't lock log_cb");
-            *log_cb = Some(logging.log.expect("logging isn't valid"));
-        }
+        let mut log_cb = LOG_CB.lock().expect("Couldn't lock log_cb");
+        *log_cb = Some(logging.log.expect("logging isn't valid"));
     } else {
         //let let_cb = fallback_log;
     }
@@ -1591,9 +1604,8 @@ pub extern "C" fn retro_get_system_av_info(info: *mut retro_system_av_info) {
     retro_system_av_info_ref.timing.fps = FRAMES_PER_SECOND;
     retro_system_av_info_ref.timing.sample_rate = 524_288.0;
 
-    let environment_cb = ENVIRONMENT_CB.lock().expect("Couldn't lock environment_cb");
-
     let mut format = retro_pixel_format_RETRO_PIXEL_FORMAT_XRGB8888;
+    let environment_cb = ENVIRONMENT_CB.lock().expect("Couldn't lock environment_cb");
     match environment_cb.deref() {
         Some(t) => unsafe { t(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &mut format as *mut _ as *mut ::std::os::raw::c_void); },
         _ => {},
@@ -1615,6 +1627,130 @@ pub extern "C" fn retro_run() {
     match gameboy.deref_mut() {
         Some(t) => { t.update_frame(); },
         _ => {},
+    }
+
+    {
+        let input_poll_cb = INPUT_POLL_CB.lock().expect("Couldn't lock input_poll_cb");
+        match input_poll_cb.deref() {
+            Some(t) => unsafe { t(); },
+            _ => {},
+        }
+    }
+
+    {
+        let input_state_cb_mutex_guard = INPUT_STATE_CB.lock().expect("Couldn't lock input_state_cb");
+        let input_state_cb = input_state_cb_mutex_guard.deref().expect("Invalid input_state_cb");
+        let resp_b = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B) };
+        let resp_select = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT) };
+        let resp_start = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START) };
+        let resp_up = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP) };
+        let resp_down = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN) };
+        let resp_left = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT) };
+        let resp_right = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT) };
+        let resp_a = unsafe { input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A) };
+
+        let mut button_states = BUTTON_STATES.lock().expect("Couldn't lock button_states");
+
+        match gameboy.deref_mut() {
+            Some(t) => {
+                if resp_b != 0 {
+                    if !button_states["b"] {
+                        t.key_pressed(4);
+                        button_states.insert(String::from("b"), true);
+                    }
+                } else {
+                    if button_states["b"] {
+                        t.key_released(4);
+                        button_states.insert(String::from("b"), false);
+                    }
+                }
+        
+                if resp_select != 0 {
+                    if !button_states["select"] {
+                        t.key_pressed(6);
+                        button_states.insert(String::from("select"), true);
+                    }
+                } else {
+                    if button_states["select"] {
+                        t.key_released(6);
+                        button_states.insert(String::from("select"), false);
+                    }
+                }
+        
+                if resp_start != 0 {
+                    if !button_states["start"] {
+                        t.key_pressed(7);
+                        button_states.insert(String::from("start"), true);
+                    }
+                } else {
+                    if button_states["start"] {
+                        t.key_released(7);
+                        button_states.insert(String::from("start"), false);
+                    }
+                }
+        
+                if resp_up != 0 {
+                    if !button_states["up"] {
+                        t.key_pressed(2);
+                        button_states.insert(String::from("up"), true);
+                    }
+                } else {
+                    if button_states["up"] {
+                        t.key_released(2);
+                        button_states.insert(String::from("up"), false);
+                    }
+                }
+        
+                if resp_down != 0 {
+                    if !button_states["down"] {
+                        t.key_pressed(3);
+                        button_states.insert(String::from("down"), true);
+                    }
+                } else {
+                    if button_states["down"] {
+                        t.key_released(3);
+                        button_states.insert(String::from("down"), false);
+                    }
+                }
+        
+                if resp_left != 0 {
+                    if !button_states["left"] {
+                        t.key_pressed(1);
+                        button_states.insert(String::from("left"), true);
+                    }
+                } else {
+                    if button_states["left"] {
+                        t.key_released(1);
+                        button_states.insert(String::from("left"), false);
+                    }
+                }
+        
+                if resp_right != 0 {
+                    if !button_states["right"] {
+                        t.key_pressed(0);
+                        button_states.insert(String::from("right"), true);
+                    }
+                } else {
+                    if button_states["right"] {
+                        t.key_released(0);
+                        button_states.insert(String::from("right"), false);
+                    }
+                }
+
+                if resp_a != 0 {
+                    if !button_states["a"] {
+                        t.key_pressed(5);
+                        button_states.insert(String::from("a"), true);
+                    }
+                } else {
+                    if button_states["a"] {
+                        t.key_released(5);
+                        button_states.insert(String::from("a"), false);
+                    }
+                }
+            },
+            _ => {},
+        }
     }
 
     let screen_data = match gameboy.deref() {
