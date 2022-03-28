@@ -20,7 +20,7 @@ use gameboy::Gameboy;
 
 const WIDTH: u16 = 160;
 const HEIGHT: u16 = 144;
-const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
+const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 4; // XRGB8888
 
 const CYCLES_PER_SECOND: u32 = 4_194_304;
 /*
@@ -1590,6 +1590,14 @@ pub extern "C" fn retro_get_system_av_info(info: *mut retro_system_av_info) {
     retro_system_av_info_ref.geometry.aspect_ratio = WIDTH as f32 / HEIGHT as f32;
     retro_system_av_info_ref.timing.fps = FRAMES_PER_SECOND;
     retro_system_av_info_ref.timing.sample_rate = 524_288.0;
+
+    let environment_cb = ENVIRONMENT_CB.lock().expect("Couldn't lock environment_cb");
+
+    let mut format = retro_pixel_format_RETRO_PIXEL_FORMAT_XRGB8888;
+    match environment_cb.deref() {
+        Some(t) => unsafe { t(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &mut format as *mut _ as *mut ::std::os::raw::c_void); },
+        _ => {},
+    }
 }
 
 #[no_mangle]
@@ -1616,7 +1624,7 @@ pub extern "C" fn retro_run() {
 
     let video_cb = VIDEO_CB.lock().expect("Couldn't lock video_cb");
     match video_cb.deref() {
-        Some(t) => unsafe { t(&screen_data as *const _ as *const ::std::os::raw::c_void, WIDTH.into(), HEIGHT.into(), /*WIDTH.wrapping_mul(3).into()*/ WIDTH.into()) },
+        Some(t) => unsafe { t(&screen_data as *const _ as *const ::std::os::raw::c_void, WIDTH.into(), HEIGHT.into(), WIDTH.wrapping_mul(4).into()) },
         _ => {},
     }
 }
