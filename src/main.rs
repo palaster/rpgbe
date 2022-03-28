@@ -70,10 +70,10 @@ fn main() {
                         Keycode::A => 1, // LEFT
                         Keycode::S => 3, // DOWN
                         Keycode::D => 0, // RIGHT
-                        Keycode::H => 4, // B
-                        Keycode::U => 5, // A
-                        Keycode::B => 7, // SELECT
-                        Keycode::N => 6, // START
+                        Keycode::H => 5, // B
+                        Keycode::U => 4, // A
+                        Keycode::B => 6, // SELECT
+                        Keycode::N => 7, // START
                         _ => -1,
                     };
                     if key_code >= 0 {
@@ -86,10 +86,10 @@ fn main() {
                         Keycode::A => 1, // LEFT
                         Keycode::S => 3, // DOWN
                         Keycode::D => 0, // RIGHT
-                        Keycode::H => 4, // B
-                        Keycode::U => 5, // A
-                        Keycode::B => 7, // SELECT
-                        Keycode::N => 6, // START
+                        Keycode::H => 5, // B
+                        Keycode::U => 4, // A
+                        Keycode::B => 6, // SELECT
+                        Keycode::N => 7, // START
                         _ => -1,
                     };
                     if key_code >= 0 {
