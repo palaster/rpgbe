@@ -1,9 +1,16 @@
-use crate::{ WIDTH, SCREEN_DATA_SIZE, FREQUENCY_4096, FREQUENCY_262144, FREQUENCY_65536, FREQUENCY_16384 };
-use crate::Cpu;
-use crate::Memory;
+//use crate::{ WIDTH, SCREEN_DATA_SIZE, FREQUENCY_4096, FREQUENCY_262144, FREQUENCY_65536, FREQUENCY_16384 };
+use crate::{ WIDTH, SCREEN_DATA_SIZE, CYCLES_PER_FRAME};
+
+use crate::cpu::Cpu;
+use crate::memory::Memory;
 use crate::bit_logic;
 
 const IS_DEBUG_MODE: bool = false;
+
+const FREQUENCY_4096: u16 = 1024; // CYCLES_PER_SECOND / 4096
+const FREQUENCY_262144: u16 = 16; // CYCLES_PER_SECOND / 262144
+const FREQUENCY_65536: u16 = 64; // CYCLES_PER_SECOND / 65536
+const FREQUENCY_16384: u16 = 256; // CYCLES_PER_SECOND / 16384
 
 pub const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
@@ -26,6 +33,7 @@ pub enum MemoryWriteResult {
     SetTimerCounter,
 }
 
+#[derive(Debug)]
 pub struct Gameboy {
     target_pc: i32,
     scanline_counter: i32,
@@ -33,12 +41,12 @@ pub struct Gameboy {
     pub divider_counter: i32,
     pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
-    cpu: Cpu,
-    memory: Memory,
+    pub cpu: Cpu,
+    pub memory: Memory,
 }
 
 impl Gameboy {
-    pub fn new(cpu: Cpu, memory: Memory) -> Gameboy {
+    pub fn new() -> Gameboy {
         Gameboy {
             target_pc: -1,
             scanline_counter: SCANLINE_COUNTER_START as i32,
@@ -46,8 +54,8 @@ impl Gameboy {
             divider_counter: 0,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
-            cpu: cpu,
-            memory: memory,
+            cpu: Cpu::new(),
+            memory: Memory::new(),
         }
     }
 
@@ -102,7 +110,7 @@ impl Gameboy {
         self.memory.rom[address as usize] = value;
     }
 
-    pub fn update(&mut self) -> u8 {
+    pub fn update_cycle(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
             let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
@@ -143,6 +151,13 @@ impl Gameboy {
         self.update_graphics(cycles);
         cycles += self.do_interrupts();
         cycles
+    }
+
+    pub fn update_frame(&mut self) {
+        let mut cycles_this_frame: f64 = 0.0;
+        while cycles_this_frame <= CYCLES_PER_FRAME {
+            cycles_this_frame += self.update_cycle() as f64;
+        }
     }
 
     fn is_clock_enabled(&self) -> bool {

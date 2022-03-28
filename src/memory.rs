@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::bit_logic;
 use crate::gameboy::{ MemoryWriteResult, TAC};
 
+#[derive(Debug)]
 pub struct Memory {
     pub gamepad_state: u8,
     rom_banking: bool,
@@ -68,7 +69,7 @@ impl Memory {
         }
     }
 
-    pub fn load_cartridge(&mut self, rom_path: PathBuf) {
+    pub fn load_cartridge_from_path(&mut self, rom_path: PathBuf) {
         let mut file = File::open(rom_path).expect("Invalid ROM path");
         file.read_to_end(&mut self.cartridge).expect("Unable to read ROM");
         for i in 0..0x8000 {

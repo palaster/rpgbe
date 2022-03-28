@@ -1,5 +1,5 @@
 use crate::bit_logic;
-use crate::Memory;
+use crate::memory::Memory;
 use crate::gameboy::MemoryWriteResult;
 
 const IS_CPU_DEBUG_MODE: bool = false;
