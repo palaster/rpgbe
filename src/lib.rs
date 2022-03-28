@@ -1655,12 +1655,12 @@ pub extern "C" fn retro_run() {
             Some(t) => {
                 if resp_b != 0 {
                     if !button_states["b"] {
-                        t.key_pressed(4);
+                        t.key_pressed(5);
                         button_states.insert(String::from("b"), true);
                     }
                 } else {
                     if button_states["b"] {
-                        t.key_released(4);
+                        t.key_released(5);
                         button_states.insert(String::from("b"), false);
                     }
                 }
@@ -1739,12 +1739,12 @@ pub extern "C" fn retro_run() {
 
                 if resp_a != 0 {
                     if !button_states["a"] {
-                        t.key_pressed(5);
+                        t.key_pressed(4);
                         button_states.insert(String::from("a"), true);
                     }
                 } else {
                     if button_states["a"] {
-                        t.key_released(5);
+                        t.key_released(4);
                         button_states.insert(String::from("a"), false);
                     }
                 }
