@@ -1,9 +1,11 @@
 use crate::{ bit_logic, WIDTH, SCREEN_DATA_SIZE };
 
+mod spu;
 mod graphic;
 mod cpu;
 mod memory;
 
+use spu::Spu;
 use cpu::Cpu;
 use memory::Memory;
 
@@ -35,6 +37,7 @@ pub(crate) struct Gameboy {
     pub(crate) divider_counter: i32,
     pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
+    pub(crate) spu: Spu,
     cpu: Cpu,
     pub(crate) memory: Memory,
 }
@@ -48,6 +51,7 @@ impl Gameboy {
             divider_counter: 0,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
+            spu: Spu::new(),
             cpu: Cpu::new(),
             memory: Memory::new(),
         }
@@ -108,7 +112,7 @@ impl Gameboy {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
             let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
-            cycles = new_cycles * 4;
+            cycles = new_cycles.wrapping_mul(4);
             for memory_result in memory_write_results {
                 match memory_result {
                     MemoryWriteResult::ResetDividerCounter => {
@@ -143,6 +147,7 @@ impl Gameboy {
         }
         self.update_timer(cycles);
         self.update_graphics(cycles);
+        self.update_audio(cycles);
         cycles += self.do_interrupts();
         cycles
     }

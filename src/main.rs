@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{ Duration, Instant };
 
-use sdl2::pixels::PixelFormatEnum;
+use sdl2::audio::{ AudioQueue, AudioSpecDesired };
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::pixels::PixelFormatEnum;
 
 mod gameboy;
 mod bit_logic;
@@ -28,6 +29,7 @@ fn main() {
 
     let sdl_context = sdl2::init().expect("Couldn't init sdl");
     let video_subsystem = sdl_context.video().expect("Couldn't init sdl video");
+    let audio_subsystem = sdl_context.audio().expect("Couldn't init sdl audio");
 
     let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
         .position_centered()
@@ -43,6 +45,15 @@ fn main() {
     let texture_creator = canvas.texture_creator();
 
     let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
+
+    let desired_spec = AudioSpecDesired {
+        freq: Some(44100),
+        channels: Some(2),
+        samples: None,
+    };
+
+    let device: AudioQueue<f32> = audio_subsystem.open_queue(None, &desired_spec).expect("Couldn't get a desired audio device");
+    device.resume();
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
@@ -101,6 +112,9 @@ fn main() {
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
+
+        device.queue(&gameboy.spu.audio_data);
+        gameboy.spu.audio_data.clear();
 
         let elapsed_time = start.elapsed();
         if elapsed_time <= DURATION_BETWEEN_FRAMES {
