@@ -1,6 +1,6 @@
 use crate::bit_logic;
-use crate::Memory;
-use crate::gameboy::MemoryWriteResult;
+use super::memory::Memory;
+use super::MemoryWriteResult;
 
 const IS_CPU_DEBUG_MODE: bool = false;
 
@@ -60,7 +60,7 @@ const CB_INSTRUCTION_TIMINGS: [u8; 256] = [
 ];
 
 #[derive(Debug)]
-pub struct Cpu {
+pub(crate) struct Cpu {
     a: u8,
     b: u8,
     c: u8,
@@ -69,19 +69,19 @@ pub struct Cpu {
     h: u8,
     l: u8,
     sp: u16,
-    pub pc: u16,
+    pub(crate) pc: u16,
     zero: bool,
     subtract: bool,
     half_carry: bool,
     carry: bool,
-    pub halted: bool,
-    pub interrupts_enabled: bool,
-    pub pending_interrupt_enable: bool,
-    pub one_instruction_passed: bool,
+    pub(crate) halted: bool,
+    pub(crate) interrupts_enabled: bool,
+    pub(crate) pending_interrupt_enable: bool,
+    pub(crate) one_instruction_passed: bool,
 }
 
 impl Cpu {
-    pub fn new() -> Cpu {
+    pub(crate) fn new() -> Cpu {
         Cpu {
             a: 0x01,
             b: 0x00,
@@ -103,7 +103,7 @@ impl Cpu {
         }
     }
 
-    pub fn debug(&self) -> String {
+    pub(crate) fn debug(&self) -> String {
         format!("A: {:#02x}\nF: {:#02x}\nB: {:#02x}\nC: {:#02x}\nD: {:#02x}\nE: {:#02x}\nH: {:#02x}\nL: {:#02x}\nSP: {:#04x}\nPC: {:#04x}\n",
         self.a,
         self.get_f(),
@@ -413,7 +413,7 @@ impl Cpu {
         self.jp_from_word(self.pc.wrapping_add(value));
     }
 
-    pub fn update(&mut self, memory: &mut Memory) -> (u8, Vec<MemoryWriteResult>) {
+    pub(crate) fn update(&mut self, memory: &mut Memory) -> (u8, Vec<MemoryWriteResult>) {
         let instruction: u8 = self.fetch(memory);
         let (cycles, memory_write_results) = self.execute(memory, instruction);
         if self.pending_interrupt_enable {

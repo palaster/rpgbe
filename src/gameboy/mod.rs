@@ -1,13 +1,22 @@
-use crate::{ WIDTH, SCREEN_DATA_SIZE, FREQUENCY_4096, FREQUENCY_262144, FREQUENCY_65536, FREQUENCY_16384 };
-use crate::Cpu;
-use crate::Memory;
+use crate::{ WIDTH, SCREEN_DATA_SIZE };
 use crate::bit_logic;
+
+mod cpu;
+mod memory;
+
+use cpu::Cpu;
+use memory::Memory;
 
 const IS_DEBUG_MODE: bool = false;
 
-pub const TIMA: u16 = 0xff05;
+const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
-pub const TAC: u16 = 0xff07;
+const TAC: u16 = 0xff07;
+
+const FREQUENCY_4096: u16 = 1024; // CYCLES_PER_SECOND / 4096
+const FREQUENCY_262144: u16 = 16; // CYCLES_PER_SECOND / 262144
+const FREQUENCY_65536: u16 = 64; // CYCLES_PER_SECOND / 65536
+const FREQUENCY_16384: u16 = 256; // CYCLES_PER_SECOND / 16384
 
 const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
 const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
@@ -20,25 +29,25 @@ enum Color {
     Black,
 }
 
-pub enum MemoryWriteResult {
+pub(crate) enum MemoryWriteResult {
     None,
     ResetDividerCounter,
     SetTimerCounter,
 }
 
-pub struct Gameboy {
+pub(crate) struct Gameboy {
     target_pc: i32,
     scanline_counter: i32,
-    pub timer_counter: i32,
-    pub divider_counter: i32,
-    pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
+    pub(crate) timer_counter: i32,
+    pub(crate) divider_counter: i32,
+    pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
     cpu: Cpu,
-    memory: Memory,
+    pub(crate) memory: Memory,
 }
 
 impl Gameboy {
-    pub fn new(cpu: Cpu, memory: Memory) -> Gameboy {
+    pub(crate) fn new() -> Gameboy {
         Gameboy {
             target_pc: -1,
             scanline_counter: SCANLINE_COUNTER_START as i32,
@@ -46,12 +55,12 @@ impl Gameboy {
             divider_counter: 0,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
-            cpu: cpu,
-            memory: memory,
+            cpu: Cpu::new(),
+            memory: Memory::new(),
         }
     }
 
-    pub fn key_pressed(&mut self, key: u8) {
+    pub(crate) fn key_pressed(&mut self, key: u8) {
         let previously_unset: bool = !bit_logic::check_bit(self.memory.gamepad_state, key);
 
         self.memory.gamepad_state = bit_logic::reset_bit(self.memory.gamepad_state, key);
@@ -72,7 +81,7 @@ impl Gameboy {
         }
     }
 
-    pub fn key_released(&mut self, key: u8) {
+    pub(crate) fn key_released(&mut self, key: u8) {
         self.memory.gamepad_state = bit_logic::set_bit(self.memory.gamepad_state, key);
     }
 
@@ -102,7 +111,7 @@ impl Gameboy {
         self.memory.rom[address as usize] = value;
     }
 
-    pub fn update(&mut self) -> u8 {
+    pub(crate) fn update(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
             let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
@@ -149,11 +158,11 @@ impl Gameboy {
         bit_logic::check_bit(self.read_from_address(TAC), 2)
     }
 
-    pub fn get_clock_freq(&self) -> u8 {
+    fn get_clock_freq(&self) -> u8 {
         self.read_from_address(TAC) & 0x3
     }
 
-    pub fn set_clock_freq(&mut self) {
+    fn set_clock_freq(&mut self) {
         match self.get_clock_freq() {
             0 => { self.timer_counter = FREQUENCY_4096 as i32 },
             1 => { self.timer_counter = FREQUENCY_262144 as i32 },

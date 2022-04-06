@@ -9,23 +9,15 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 
 mod gameboy;
-mod cpu;
-mod memory;
 mod bit_logic;
 
 use gameboy::Gameboy;
-use cpu::Cpu;
-use memory::Memory;
 
 const WIDTH: u16 = 160;
 const HEIGHT: u16 = 144;
 const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 
 const CYCLES_PER_SECOND: u32 = 4_194_304;
-const FREQUENCY_4096: u16 = 1024; // CYCLES_PER_SECOND / 4096
-const FREQUENCY_262144: u16 = 16; // CYCLES_PER_SECOND / 262144
-const FREQUENCY_65536: u16 = 64; // CYCLES_PER_SECOND / 65536
-const FREQUENCY_16384: u16 = 256; // CYCLES_PER_SECOND / 16384
 const FRAMES_PER_SECOND: f64 = 59.727500569606;
 const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
 const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
@@ -54,9 +46,8 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
-    let mut memory = Memory::new();
-    memory.load_cartridge(PathBuf::from(rom_path));
-    let mut gameboy = Gameboy::new(Cpu::new(), memory);
+    let mut gameboy = Gameboy::new();
+    gameboy.memory.load_cartridge(PathBuf::from(rom_path));
 
     'running: loop {
         for event in event_pump.poll_iter() {

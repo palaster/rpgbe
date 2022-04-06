@@ -3,23 +3,23 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 
 use crate::bit_logic;
-use crate::gameboy::{ MemoryWriteResult, TAC};
+use super::{ MemoryWriteResult, TAC};
 
-pub struct Memory {
-    pub gamepad_state: u8,
+pub(crate) struct Memory {
+    pub(crate) gamepad_state: u8,
     rom_banking: bool,
     enable_ram: bool,
     mbc1: bool,
     mbc2: bool,
-    current_rom_bank : u8,
+    current_rom_bank: u8,
     current_ram_bank: u8,
     ram_banks: Vec<u8>,
-    pub cartridge: Vec<u8>,
-    pub rom: Vec<u8>,
+    cartridge: Vec<u8>,
+    pub(crate) rom: Vec<u8>,
 }
 
 impl Memory {
-    pub fn new() -> Memory {
+    pub(crate) fn new() -> Memory {
         let mut rom_vec = vec![0; 0x10000];
 
         rom_vec[0xff05] = 0x00;
@@ -68,7 +68,7 @@ impl Memory {
         }
     }
 
-    pub fn load_cartridge(&mut self, rom_path: PathBuf) {
+    pub(crate) fn load_cartridge(&mut self, rom_path: PathBuf) {
         let mut file = File::open(rom_path).expect("Invalid ROM path");
         file.read_to_end(&mut self.cartridge).expect("Unable to read ROM");
         for i in 0..0x8000 {
@@ -93,7 +93,7 @@ impl Memory {
         res
     }
 
-    pub fn read_from_memory(&self, address: u16) -> u8 {
+    pub(crate) fn read_from_memory(&self, address: u16) -> u8 {
         match address {
             0x4000..=0x7fff => {
                 let new_address: u16 = address - 0x4000;
@@ -197,7 +197,7 @@ impl Memory {
         }
     }
 
-    pub fn write_to_memory(&mut self, address: u16, value: u8) -> Vec<MemoryWriteResult> {
+    pub(crate) fn write_to_memory(&mut self, address: u16, value: u8) -> Vec<MemoryWriteResult> {
         let memory_write_results: Vec<MemoryWriteResult> = vec![MemoryWriteResult::None];
         match address {
             0..=0x7fff => { self.handle_banking(address, value) },
