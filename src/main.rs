@@ -24,6 +24,9 @@ const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
 const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
 const DURATION_BETWEEN_FRAMES: Duration = Duration::from_nanos(TIME_BETWEEN_FRAMES_IN_NANOSECONDS as u64);
 
+const SAMPLE_RATE: u16 = 44_100;
+const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
+
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  
 
@@ -47,7 +50,7 @@ fn main() {
     let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
 
     let desired_spec = AudioSpecDesired {
-        freq: Some(44100),
+        freq: Some(SAMPLE_RATE as i32),
         channels: Some(2),
         samples: None,
     };

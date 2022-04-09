@@ -207,7 +207,6 @@ impl Memory {
                     self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize] = value
                 }
             },
-            0xfea0..=0xfeff => {},
             0xc000..=0xdfff => {
                 self.rom[address as usize] = value;
                 if address + 0x2000 <= 0xfdff {
@@ -218,13 +217,12 @@ impl Memory {
                 self.rom[address as usize] = value;
                 self.rom[(address - 0x2000) as usize] = value
             },
+            0xfea0..=0xfeff => {},
             TAC => {
                 let current_freq: u8 = self.read_from_memory(TAC) & 0x3;
                 self.rom[address as usize] = value;
                 let new_freq: u8 = self.read_from_memory(TAC) & 0x3;
-                if current_freq != new_freq {
-                    return vec![MemoryWriteResult::SetTimerCounter];
-                }
+                if current_freq != new_freq { return vec![MemoryWriteResult::SetTimerCounter]; }
             },
             0xff04 | 0xff44 => {
                 self.rom[address as usize] = 0;
@@ -232,6 +230,22 @@ impl Memory {
             },
             0xff46 => {
                 return self.do_dma_transfer(value);
+            },
+            0xff14 => {
+                self.rom[address as usize] = value;
+                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(0, self.read_from_memory(0xff11) & 0x3f)]; }
+            },
+            0xff19 => {
+                self.rom[address as usize] = value;
+                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(1, self.read_from_memory(0xff16) & 0x3f)]; }
+            },
+            0xff1e => {
+                self.rom[address as usize] = value;
+                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(2, self.read_from_memory(0xff1b))]; }
+            },
+            0xff23 => {
+                self.rom[address as usize] = value;
+                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(3, self.read_from_memory(0xff20) & 0x3f)]; }
             },
             _ => { self.rom[address as usize] = value },
         }

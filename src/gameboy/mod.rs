@@ -1,11 +1,11 @@
-use crate::{ bit_logic, WIDTH, SCREEN_DATA_SIZE };
+use crate::{ bit_logic, WIDTH, SCREEN_DATA_SIZE, TIME_BETWEEN_AUDIO_SAMPLING };
 
 mod spu;
 mod graphic;
 mod cpu;
 mod memory;
 
-use spu::Spu;
+use spu::{ Spu, SoundChannel };
 use cpu::Cpu;
 use memory::Memory;
 
@@ -28,6 +28,7 @@ pub(crate) enum MemoryWriteResult {
     None,
     ResetDividerCounter,
     SetTimerCounter,
+    ResetChannel(u8, u8),
 }
 
 pub(crate) struct Gameboy {
@@ -95,6 +96,15 @@ impl Gameboy {
                 MemoryWriteResult::SetTimerCounter => {
                     self.set_clock_freq()
                 },
+                MemoryWriteResult::ResetChannel(id, length) => {
+                    match id {
+                        0 => { self.spu.sound_channel_1.reset(&self.memory, length) },
+                        1 => { self.spu.sound_channel_2.reset(&self.memory, length) },
+                        2 => { self.spu.sound_channel_3.reset(&self.memory, length) },
+                        3 => { self.spu.sound_channel_4.reset(&self.memory, length) },
+                        _ => { },
+                    }
+                },
                 _ => { },
             }
         }
@@ -120,6 +130,15 @@ impl Gameboy {
                     },
                     MemoryWriteResult::SetTimerCounter => {
                         self.set_clock_freq()
+                    },
+                    MemoryWriteResult::ResetChannel(id, length) => {
+                        match id {
+                            0 => { self.spu.sound_channel_1.reset(&self.memory, length) },
+                            1 => { self.spu.sound_channel_2.reset(&self.memory, length) },
+                            2 => { self.spu.sound_channel_3.reset(&self.memory, length) },
+                            3 => { self.spu.sound_channel_4.reset(&self.memory, length) },
+                            _ => { },
+                        }
                     },
                     _ => { },
                 }
@@ -271,6 +290,29 @@ impl Gameboy {
                 self.raw_write_to_rom(0xff44, 0);
             } else if current_line < VERTICAL_BLANK_SCAN_LINE {
                 self.draw_scanline();
+            }
+        }
+    }
+
+    fn update_audio(&mut self, cycles: u8) {
+        let volume: f32 = 0.5;
+        for _ in 0..cycles {
+            self.spu.sound_channel_1.update(&mut self.memory);
+            self.spu.sound_channel_2.update(&mut self.memory);
+            self.spu.sound_channel_3.update(&mut self.memory);
+            self.spu.sound_channel_4.update(&mut self.memory);
+
+            if self.spu.audio_fill_timer == 0 {
+                self.spu.audio_fill_timer = TIME_BETWEEN_AUDIO_SAMPLING;
+                let mut results = 0.0;
+                results += self.spu.sound_channel_1.get_amplitude(&self.memory) * volume;
+                results += self.spu.sound_channel_2.get_amplitude(&self.memory) * volume;
+                results += self.spu.sound_channel_3.get_amplitude(&self.memory) * volume;
+                results += self.spu.sound_channel_4.get_amplitude(&self.memory) * volume;
+                self.spu.audio_data.push(results); // Left Channel
+                self.spu.audio_data.push(results); // Right Channel
+            } else {
+                self.spu.audio_fill_timer = self.spu.audio_fill_timer.wrapping_sub(1);
             }
         }
     }
