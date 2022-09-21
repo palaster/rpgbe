@@ -295,7 +295,6 @@ impl Gameboy {
     }
 
     fn update_audio(&mut self, cycles: u8) {
-        let volume: f32 = 0.5;
         for _ in 0..cycles {
             self.spu.sound_channel_1.update(&mut self.memory);
             self.spu.sound_channel_2.update(&mut self.memory);
@@ -304,15 +303,39 @@ impl Gameboy {
 
             if self.spu.audio_fill_timer == 0 {
                 self.spu.audio_fill_timer = TIME_BETWEEN_AUDIO_SAMPLING;
-                let mut results = 0.0;
-                results += self.spu.sound_channel_1.get_amplitude(&self.memory) * volume;
-                results += self.spu.sound_channel_2.get_amplitude(&self.memory) * volume;
-                results += self.spu.sound_channel_3.get_amplitude(&self.memory) * volume;
-                results += self.spu.sound_channel_4.get_amplitude(&self.memory) * volume;
-                self.spu.audio_data.push(results); // Left Channel
-                self.spu.audio_data.push(results); // Right Channel
+                let (_enable_left_vin, left_volume, _enable_right_vin, right_volume) = {
+                    let nr50 = self.read_from_address(0xff24);
+                    (
+                        nr50 & 0x80 != 0,
+                        (nr50 & 0x70) >> 4,
+                        nr50 & 0x8 != 0,
+                        nr50 & 0x7
+                    )
+                };
+                let channel_1 = self.spu.sound_channel_1.get_amplitude(&self.memory);
+                let channel_2 = self.spu.sound_channel_2.get_amplitude(&self.memory);
+                let channel_3 = self.spu.sound_channel_3.get_amplitude(&self.memory);
+                let channel_4 = self.spu.sound_channel_4.get_amplitude(&self.memory);
+                let nr51 = self.read_from_address(0xff25);
+                if nr51 != 0 {
+                    let mut left_results = 0.0;
+                    left_results += if bit_logic::check_bit(nr51, 4) { channel_1 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 5) { channel_2 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 6) { channel_3 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 7) { channel_4 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    self.spu.audio_data.push(left_results);
+                    let mut right_results = 0.0;
+                    right_results += if bit_logic::check_bit(nr51, 0) { channel_1 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 1) { channel_2 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 2) { channel_3 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 3) { channel_4 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    self.spu.audio_data.push(right_results);
+                } else {
+                    self.spu.audio_data.push(0.0);
+                    self.spu.audio_data.push(0.0);
+                }
             } else {
-                self.spu.audio_fill_timer = self.spu.audio_fill_timer.wrapping_sub(1);
+                self.spu.audio_fill_timer = self.spu.audio_fill_timer.saturating_sub(1);
             }
         }
     }
