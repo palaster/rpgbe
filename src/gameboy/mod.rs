@@ -1,4 +1,7 @@
-use crate::{ bit_logic, WIDTH, SCREEN_DATA_SIZE, TIME_BETWEEN_AUDIO_SAMPLING };
+use crate::{ bit_logic };
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 mod spu;
 mod graphic;
@@ -10,6 +13,17 @@ use cpu::Cpu;
 use memory::Memory;
 
 const IS_DEBUG_MODE: bool = false;
+
+const WIDTH: u16 = 160;
+const HEIGHT: u16 = 144;
+const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
+
+const CYCLES_PER_SECOND: u32 = 4_194_304;
+const FRAMES_PER_SECOND: f64 = 59.727500569606;
+const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
+
+const SAMPLE_RATE: u16 = 44_100;
+const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
 
 const TIMA: u16 = 0xff05;
 const TMA: u16 = 0xff06;
@@ -118,7 +132,14 @@ impl Gameboy {
         self.memory.rom[address as usize] = value;
     }
 
-    pub(crate) fn update(&mut self) -> u8 {
+    pub(crate) fn next_frame(&mut self) {
+        let mut cycles_this_frame: f64 = 0.0;
+        while cycles_this_frame <= CYCLES_PER_FRAME {
+            cycles_this_frame += self.update() as f64;
+        }
+    }
+
+    fn update(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
             let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
@@ -144,19 +165,20 @@ impl Gameboy {
                 }
             }
             if IS_DEBUG_MODE {
-                println!("{}", self.cpu.debug());
+                //println!("{}", self.cpu.debug());
             }
         }
         if IS_DEBUG_MODE {
             if self.raw_read_from_rom(0xff02) == 0x81 {
                 let c: char = self.raw_read_from_rom(0xff01) as char;
-                print!("{}", c);
+                //print!("{}", c);
                 self.raw_write_to_rom(0xff02, 0x0);
             }
             if self.target_pc == -1 {
-                let mut line = String::new();
-                println!("Enter new PC to run to:");
-                std::io::stdin().read_line(&mut line).unwrap();
+                //let mut line = String::new();
+                let line = String::new();
+                //println!("Enter new PC to run to:");
+                //std::io::stdin().read_line(&mut line).unwrap();
                 if !line.is_empty() {
                     self.target_pc = line.trim().parse().unwrap_or(-1);
                 }

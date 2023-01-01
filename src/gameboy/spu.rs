@@ -1,5 +1,7 @@
-use crate::{ bit_logic, TIME_BETWEEN_AUDIO_SAMPLING};
-use super::Memory;
+use crate::gameboy::Vec;
+
+use crate::{ bit_logic };
+use super::{Memory, TIME_BETWEEN_AUDIO_SAMPLING};
 
 const WAVE_FORM: [[u8; 8]; 4] = [
     [0, 0, 0, 0, 0, 0, 0, 1,],

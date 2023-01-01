@@ -1,5 +1,5 @@
-use crate::{ bit_logic, WIDTH };
-use super::Gameboy;
+use crate::{ bit_logic };
+use super::{Gameboy, WIDTH};
 
 enum Color {
     White,
@@ -73,7 +73,7 @@ impl Gameboy {
         };
 
         let tile_row: u16 = (y_pos as u16).wrapping_div(8).wrapping_mul(32);
-        for pixel in 0..WIDTH {
+        for pixel in 0u16..WIDTH {
             let mut x_pos: u8 = pixel.wrapping_add(scroll_x as u16) as u8;
             if using_window && pixel >= (window_x as u16) {
                 x_pos = pixel.wrapping_sub(window_x as u16) as u8;

@@ -1,8 +1,5 @@
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::PathBuf;
-
 use crate::bit_logic;
+use crate::gameboy::Vec;
 use super::{ MemoryWriteResult, TAC};
 
 pub(crate) struct Memory {
@@ -68,9 +65,8 @@ impl Memory {
         }
     }
 
-    pub(crate) fn load_cartridge(&mut self, rom_path: PathBuf) {
-        let mut file = File::open(rom_path).expect("Invalid ROM path");
-        file.read_to_end(&mut self.cartridge).expect("Unable to read ROM");
+    pub(crate) fn load_cartridge(&mut self, game_data: Vec<u8>) {
+        self.cartridge = game_data;
         for i in 0..0x8000 {
             self.rom[i] = self.cartridge[i];
         }

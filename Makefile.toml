@@ -1,0 +1,15 @@
+extend = "common.toml"
+
+[env]
+# Project information
+TITLE = "RPGBE"
+TITLEID = "RPGBE0001"
+
+[config]
+load_script = [
+    """
+    if [ ! -f common.toml ]; then
+        curl -SsL https://github.com/kourm/common/raw/build-std/common.toml > common.toml
+    fi
+    """
+]

@@ -6,5 +6,12 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+crate-type = ["staticlib"]
+
 [dependencies]
-sdl2 = "0.35.1"
+psp2-sys = { git = "https://github.com/vita-rust/psp2-sys" }
+
+[profile.release]
+lto = true
+panic = 'abort'
