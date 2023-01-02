@@ -75,8 +75,8 @@ script = [
 ]
 
 [tasks.get-target-specs]
-description = "Download target specs from the `vita-rust/common` git repository."
-env = { TARGET_JSON_URL = "https://github.com/vita-rust/common/raw/master/${RUST_TARGET}.json"}
+description = "Download target specs from the `rust-on-vita/common` git repository."
+env = { TARGET_JSON_URL = "https://github.com/rust-on-vita/common/raw/master/${RUST_TARGET}.json"}
 condition = { env_set = ["RUST_TARGET_PATH"] }
 condition_script = [ 'test ! -f "${RUST_TARGET_PATH}/${RUST_TARGET}.json"' ]
 script = [
@@ -92,7 +92,7 @@ script = [
 description = "Build the project using `cargo`."
 dependencies = ["get-target-specs"]
 command = "cargo"
-args = ["build", "-Z", "build-std=core,alloc", "--target=${RUST_TARGET_PATH}/armv7-vita-eabihf.json", "--release", "-vv", "--all-features"]
+args = ["build", "-Z", "build-std=core,alloc", "--target=${RUST_TARGET_PATH}/${RUST_TARGET}.json", "--release", "-vv", "--all-features"]
 
 
 ### DISTRIBUTION TASKS #########################################################

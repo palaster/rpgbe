@@ -10,7 +10,8 @@ edition = "2018"
 crate-type = ["staticlib"]
 
 [dependencies]
-psp2-sys = { git = "https://github.com/vita-rust/psp2-sys" }
+psp2-sys = { git = "https://github.com/rust-on-vita/psp2-sys" }
+vitallocator = { git = "https://github.com/rust-on-vita/vitallocator" }
 
 [profile.release]
 lto = true

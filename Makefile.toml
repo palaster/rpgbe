@@ -9,7 +9,7 @@ TITLEID = "RPGBE0001"
 load_script = [
     """
     if [ ! -f common.toml ]; then
-        curl -SsL https://github.com/kourm/common/raw/build-std/common.toml > common.toml
+        curl -SsL https://github.com/rust-on-vita/common/raw/master/common.toml > common.toml
     fi
     """
 ]
