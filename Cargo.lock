@@ -5,7 +5,7 @@ version = 3
 [[package]]
 name = "psp2-sys"
 version = "0.2.2"
-source = "git+https://github.com/rust-on-vita/psp2-sys#007adef58b8231d1fc688c9f39c7fda66a795504"
+source = "git+https://github.com/rust-on-vita/psp2-sys#b1eb372f91e62bd98d8daf4c2a19f1569af83192"
 
 [[package]]
 name = "rpgbe"

@@ -1,6 +1,5 @@
-use crate::{ bit_logic };
+use crate::{bit_logic, debug::screen::DebugScreen};
 
-use alloc::string::String;
 use alloc::vec::Vec;
 
 mod spu;
@@ -11,8 +10,6 @@ mod memory;
 use spu::{ Spu, SoundChannel };
 use cpu::Cpu;
 use memory::Memory;
-
-const IS_DEBUG_MODE: bool = false;
 
 const WIDTH: u16 = 160;
 const HEIGHT: u16 = 144;
@@ -45,7 +42,8 @@ pub(crate) enum MemoryWriteResult {
     ResetChannel(u8, u8),
 }
 
-pub(crate) struct Gameboy {
+pub(crate) struct Gameboy<'a> {
+    debug_screen: DebugScreen<'a>,
     target_pc: i32,
     scanline_counter: i32,
     pub(crate) timer_counter: i32,
@@ -57,9 +55,10 @@ pub(crate) struct Gameboy {
     pub(crate) memory: Memory,
 }
 
-impl Gameboy {
-    pub(crate) fn new() -> Gameboy {
+impl Gameboy<'_> {
+    pub(crate) fn new(debug_screen: DebugScreen) -> Gameboy {
         Gameboy {
+            debug_screen: debug_screen,
             target_pc: -1,
             scanline_counter: SCANLINE_COUNTER_START as i32,
             timer_counter: 0,
@@ -142,8 +141,9 @@ impl Gameboy {
     fn update(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
-            let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
+            let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory, &mut self.debug_screen);
             cycles = new_cycles.wrapping_mul(4);
+            /*
             for memory_result in memory_write_results {
                 match memory_result {
                     MemoryWriteResult::ResetDividerCounter => {
@@ -164,32 +164,12 @@ impl Gameboy {
                     _ => { },
                 }
             }
-            if IS_DEBUG_MODE {
-                //println!("{}", self.cpu.debug());
-            }
+            */
         }
-        if IS_DEBUG_MODE {
-            if self.raw_read_from_rom(0xff02) == 0x81 {
-                let c: char = self.raw_read_from_rom(0xff01) as char;
-                //print!("{}", c);
-                self.raw_write_to_rom(0xff02, 0x0);
-            }
-            if self.target_pc == -1 {
-                //let mut line = String::new();
-                let line = String::new();
-                //println!("Enter new PC to run to:");
-                //std::io::stdin().read_line(&mut line).unwrap();
-                if !line.is_empty() {
-                    self.target_pc = line.trim().parse().unwrap_or(-1);
-                }
-            } else if self.target_pc == (self.cpu.pc as i32) {
-                self.target_pc = -1;
-            }
-        }
-        self.update_timer(cycles);
-        self.update_graphics(cycles);
-        self.update_audio(cycles);
-        cycles += self.do_interrupts();
+        //self.update_timer(cycles);
+        //self.update_graphics(cycles);
+        //self.update_audio(cycles);
+        //cycles += self.do_interrupts();
         cycles
     }
 

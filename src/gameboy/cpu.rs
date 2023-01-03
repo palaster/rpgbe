@@ -1,3 +1,6 @@
+use core::fmt::Write;
+
+use crate::debug::screen::DebugScreen;
 use crate::gameboy::Vec;
 
 use crate::bit_logic;
@@ -398,8 +401,9 @@ impl Cpu {
         self.jp_from_word(self.pc.wrapping_add(value));
     }
 
-    pub(crate) fn update(&mut self, memory: &mut Memory) -> (u8, Vec<MemoryWriteResult>) {
+    pub(crate) fn update(&mut self, memory: &mut Memory, debug_screen: &mut DebugScreen) -> (u8, Vec<MemoryWriteResult>) {
         let instruction: u8 = self.fetch(memory);
+        write!(debug_screen, "{:b}\n", instruction).ok();
         let (cycles, memory_write_results) = self.execute(memory, instruction);
         if self.pending_interrupt_enable {
             if self.one_instruction_passed {

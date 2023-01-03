@@ -12,6 +12,7 @@ use psp2_sys::ctrl::*;
 use psp2_sys::kernel::processmgr::*;
 use vitallocator::Vitallocator;
 
+mod debug;
 mod gameboy;
 mod bit_logic;
 
@@ -30,72 +31,63 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
-    //let mut gameboy = gameboy::Gameboy::new();
-    //gameboy.memory.load_cartridge(Vec::new());
+    let mut gameboy = gameboy::Gameboy::new(debug::screen::DebugScreen::new());
+    
+    let data = include_bytes!("../../tetris.gb");
+
+    gameboy.memory.load_cartridge(data.to_vec());
     
     if sceCtrlSetSamplingMode(SceCtrlPadInputMode::SCE_CTRL_MODE_ANALOG) < 0 {
         sceKernelExitProcess(0);
         return 0;
     }
 
+    // id, button, current_state, was_released
+    let mut button_array = [
+        (4, SceCtrlButtons::SCE_CTRL_CIRCLE, &mut false, &mut false),
+        (5, SceCtrlButtons::SCE_CTRL_CROSS, &mut false, &mut false),
+        (2, SceCtrlButtons::SCE_CTRL_UP, &mut false, &mut false),
+        (3, SceCtrlButtons::SCE_CTRL_DOWN, &mut false, &mut false),
+        (1, SceCtrlButtons::SCE_CTRL_LEFT, &mut false, &mut false),
+        (0, SceCtrlButtons::SCE_CTRL_RIGHT, &mut false, &mut false),
+        (7, SceCtrlButtons::SCE_CTRL_START, &mut false, &mut false),
+        (6, SceCtrlButtons::SCE_CTRL_SELECT, &mut false, &mut false)
+    ];
+
     loop {
     
-        let ctrl: *mut SceCtrlData = core::ptr::null_mut::<SceCtrlData>();
-        let ret = sceCtrlReadBufferPositive(0, ctrl, 1);
-
-        if ret >= 0 {
+        let mut ctrl: SceCtrlData = Default::default();
+        if sceCtrlReadBufferPositive(0, &mut ctrl, 1) < 0 {
             break;
         }
 
-        if !ctrl.is_null() {
+        if ctrl.buttons == (SceCtrlButtons::SCE_CTRL_LTRIGGER as u32 | SceCtrlButtons::SCE_CTRL_RTRIGGER as u32) {
             break;
         }
 
-        /*
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit {..} => {
-                    break 'running
-                },
-                Event::KeyDown { keycode: Some(key_down), repeat: false, .. } => {
-                    let key_code: i8 = match key_down {
-                        Keycode::W => 2, // UP
-                        Keycode::A => 1, // LEFT
-                        Keycode::S => 3, // DOWN
-                        Keycode::D => 0, // RIGHT
-                        Keycode::H => 5, // B
-                        Keycode::U => 4, // A
-                        Keycode::B => 6, // SELECT
-                        Keycode::N => 7, // START
-                        _ => -1,
-                    };
-                    if key_code >= 0 {
-                        gameboy.key_pressed(key_code as u8);
-                    }
-                },
-                Event::KeyUp { keycode: Some(key_up), repeat: false, .. } => {
-                    let key_code: i8 = match key_up {
-                        Keycode::W => 2, // UP
-                        Keycode::A => 1, // LEFT
-                        Keycode::S => 3, // DOWN
-                        Keycode::D => 0, // RIGHT
-                        Keycode::H => 5, // B
-                        Keycode::U => 4, // A
-                        Keycode::B => 6, // SELECT
-                        Keycode::N => 7, // START
-                        _ => -1,
-                    };
-                    if key_code >= 0 {
-                        gameboy.key_released(key_code as u8);
-                    }
-                },
-                _ => (),
+        for button in &mut button_array {
+            if ctrl.buttons == button.1 as u32 {
+                *button.2 = true;
+            } else {
+                if *button.2 {
+                    *button.3 = true;
+                }
+                *button.2 = false;
             }
         }
-        */
+
+        for button in &mut button_array {
+            if *button.2 {
+                //gameboy.key_pressed(button.0);
+            }
+            if !*button.2 && *button.3 {
+                *button.3 = false;
+                //gameboy.key_released(button.0);
+            }
+        }
 
         //let start = Instant::now();
-        //gameboy.next_frame();
+        gameboy.next_frame();
         /*
         texture.update(None, &gameboy.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
         canvas.clear();
