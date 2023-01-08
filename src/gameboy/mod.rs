@@ -1,4 +1,4 @@
-use crate::{bit_logic, debug::screen::DebugScreen};
+use crate::{bit_logic};
 
 use alloc::vec::Vec;
 
@@ -11,8 +11,8 @@ use spu::{ Spu, SoundChannel };
 use cpu::Cpu;
 use memory::Memory;
 
-const WIDTH: u16 = 160;
-const HEIGHT: u16 = 144;
+pub(crate) const WIDTH: u16 = 160;
+pub(crate) const HEIGHT: u16 = 144;
 const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 
 const CYCLES_PER_SECOND: u32 = 4_194_304;
@@ -42,8 +42,7 @@ pub(crate) enum MemoryWriteResult {
     ResetChannel(u8, u8),
 }
 
-pub(crate) struct Gameboy<'a> {
-    debug_screen: DebugScreen<'a>,
+pub(crate) struct Gameboy {
     target_pc: i32,
     scanline_counter: i32,
     pub(crate) timer_counter: i32,
@@ -55,10 +54,9 @@ pub(crate) struct Gameboy<'a> {
     pub(crate) memory: Memory,
 }
 
-impl Gameboy<'_> {
-    pub(crate) fn new(debug_screen: DebugScreen) -> Gameboy {
+impl Gameboy {
+    pub(crate) fn new() -> Gameboy {
         Gameboy {
-            debug_screen: debug_screen,
             target_pc: -1,
             scanline_counter: SCANLINE_COUNTER_START as i32,
             timer_counter: 0,
@@ -141,9 +139,8 @@ impl Gameboy<'_> {
     fn update(&mut self) -> u8 {
         let mut cycles: u8 = 4;
         if !self.cpu.halted {
-            let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory, &mut self.debug_screen);
+            let (new_cycles, memory_write_results) = self.cpu.update(&mut self.memory);
             cycles = new_cycles.wrapping_mul(4);
-            /*
             for memory_result in memory_write_results {
                 match memory_result {
                     MemoryWriteResult::ResetDividerCounter => {
@@ -164,12 +161,11 @@ impl Gameboy<'_> {
                     _ => { },
                 }
             }
-            */
         }
-        //self.update_timer(cycles);
-        //self.update_graphics(cycles);
-        //self.update_audio(cycles);
-        //cycles += self.do_interrupts();
+        self.update_timer(cycles);
+        self.update_graphics(cycles);
+        self.update_audio(cycles);
+        cycles += self.do_interrupts();
         cycles
     }
 

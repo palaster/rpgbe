@@ -8,7 +8,7 @@ enum Color {
     Black,
 }
 
-impl Gameboy<'_> {
+impl Gameboy {
 
     fn get_color(&self, address: u16, color_num: u8) -> Color {
         let palette: u8 = self.read_from_address(address);
