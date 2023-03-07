@@ -120,12 +120,13 @@ impl Gameboy {
 
             self.scanline_bg[pixel as usize] = matches!(color, Color::White);
 
-            let y: u32 = (finally as u32).wrapping_mul(WIDTH as u32).wrapping_mul(3);
-            let x: u32 = (pixel as u32).wrapping_mul(3);
+            let y: u32 = (finally as u32).wrapping_mul(WIDTH as u32);
+            let x: u32 = pixel as u32;
             let xy: u32 = x.wrapping_add(y);
-            self.screen_data[xy as usize] = red;
-            self.screen_data[xy.wrapping_add(1) as usize] = green;
-            self.screen_data[xy.wrapping_add(2) as usize] = blue;
+            self.screen_data[xy as usize] = ((255u8 as u32) << 24)
+                        + ((blue as u32) << 16)
+                        + ((green as u32) << 8)
+                        + ((red as u32) << 0);
         }
     }
 
@@ -191,12 +192,13 @@ impl Gameboy {
                     }
 
                     if self.scanline_bg[pixel as usize] || priority {
-                        let y: i64 = (scanline as i64).wrapping_mul(WIDTH as i64).wrapping_mul(3);
-                        let x: i64 = (pixel as i64).wrapping_mul(3);
+                        let y: i64 = (scanline as i64).wrapping_mul(WIDTH as i64);
+                        let x: i64 = pixel as i64;
                         let xy: i64 = x.wrapping_add(y);
-                        self.screen_data[xy as usize] = red;
-                        self.screen_data[xy.wrapping_add(1) as usize] = green;
-                        self.screen_data[xy.wrapping_add(2) as usize] = blue;
+                        self.screen_data[xy as usize] = ((255u8 as u32) << 24)
+                            + ((blue as u32) << 16)
+                            + ((green as u32) << 8)
+                            + ((red as u32) << 0);
                     }
                 }
             }

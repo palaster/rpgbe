@@ -8,13 +8,22 @@ extern crate alloc;
 use core::intrinsics;
 use core::mem::size_of;
 use core::panic::PanicInfo;
+use core::slice::from_raw_parts_mut;
 
 use psp2_sys::ctrl::*;
 use psp2_sys::display::*;
 use psp2_sys::kernel::processmgr::*;
+use psp2_sys::kernel::sysmem::SceKernelAllocMemBlockOpt;
+use psp2_sys::kernel::sysmem::SceKernelMemBlockType;
+use psp2_sys::kernel::sysmem::SceKernelMemoryAccessType;
+use psp2_sys::kernel::sysmem::sceKernelAllocMemBlock;
+use psp2_sys::kernel::sysmem::sceKernelGetMemBlockBase;
+use psp2_sys::kernel::threadmgr::sceKernelCreateMutex;
+use psp2_sys::kernel::threadmgr::sceKernelLockMutex;
+use psp2_sys::kernel::threadmgr::sceKernelUnlockMutex;
+use psp2_sys::types::SceUID;
 use vitallocator::Vitallocator;
 
-mod debug;
 mod gameboy;
 mod bit_logic;
 
@@ -33,7 +42,6 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
-    let debug_screen = debug::screen::DebugScreen::new();
     let mut gameboy = gameboy::Gameboy::new();
     
     let data = include_bytes!("../../tetris.gb");
@@ -57,17 +65,43 @@ pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
         (6, SceCtrlButtons::SCE_CTRL_SELECT, &mut false, &mut false)
     ];
 
-    const FORMATED_SCREEN_DATA_SIZE: usize = (gameboy::WIDTH * gameboy::HEIGHT) as usize;
-    static mut FORMATED_FRAME_DATA: [u32; FORMATED_SCREEN_DATA_SIZE] = [0; FORMATED_SCREEN_DATA_SIZE];
-
     const VITA_WIDTH: u32 = 960;
     const VITA_HEIGHT: u32 = 544;
-    const SCALED_SCREEN_DATA_SIZE: usize = (VITA_WIDTH * VITA_HEIGHT) as usize;
-    static mut SCALED_FRAME_DATA: [u32; SCALED_SCREEN_DATA_SIZE] = [0; SCALED_SCREEN_DATA_SIZE];
+
+    let mutex: SceUID = sceKernelCreateMutex(b"display_mutex\0".as_ptr(), 0, 0, core::ptr::null_mut());
+
+    let mut display_block_options: SceKernelAllocMemBlockOpt = SceKernelAllocMemBlockOpt {
+        size: size_of::<SceKernelAllocMemBlockOpt>() as u32,
+        attr: SceKernelMemoryAccessType::SCE_KERNEL_MEMORY_ACCESS_R as u32,
+        alignment: 256 * 1024,
+        uidBaseBlock: 0,
+        strBaseBlockName: core::ptr::null(),
+        flags: 0,
+        reserved: [0; 10],
+    };
+
+    let display_block = sceKernelAllocMemBlock(b"display\0".as_ptr(), SceKernelMemBlockType::SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
+        2 * 1024 * 1024, &mut display_block_options);
+
+    let mut framebuffer_pointer: *mut core::ffi::c_void = core::ptr::null_mut();
+    sceKernelGetMemBlockBase(display_block, &mut framebuffer_pointer);
+
+    let sce_display_frame_buf = SceDisplayFrameBuf {
+        size: size_of::<SceDisplayFrameBuf>() as u32,
+        base: framebuffer_pointer,
+        pitch: VITA_WIDTH,
+        pixelformat: SceDisplayPixelFormat::SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 as u32,
+        width: VITA_WIDTH,
+        height: VITA_HEIGHT,
+    };
+    sceDisplaySetFrameBuf(&sce_display_frame_buf, SceDisplaySetBufSync::SCE_DISPLAY_SETBUF_NEXTFRAME);
+
+    let vram: &mut [u32] = from_raw_parts_mut(framebuffer_pointer as *mut u32, (2 * 1024 * 1024) / 4);
+
+    let mut ctrl: SceCtrlData = Default::default();
 
     loop {
-    
-        let mut ctrl: SceCtrlData = Default::default();
+
         if sceCtrlReadBufferPositive(0, &mut ctrl, 1) < 0 {
             break;
         }
@@ -97,30 +131,13 @@ pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
         //let start = Instant::now();
         gameboy.next_frame();
 
-        for i in (0..(FORMATED_SCREEN_DATA_SIZE * 3)).step_by(3) {
-            let (r, g, b) = (gameboy.screen_data[i], gameboy.screen_data[i + 1], gameboy.screen_data[i + 2]);
-            let value = ((255u8 as u32) << 24)
-                + ((b as u32) << 16)
-                + ((g as u32) << 8)
-                + ((r as u32) << 0);
-            FORMATED_FRAME_DATA[i / 3] = value;
-        }
-
+        sceKernelLockMutex(mutex, 1, core::ptr::null_mut());
         for y in 0..gameboy::HEIGHT {
             for x in 0..gameboy::WIDTH {
-                SCALED_FRAME_DATA[(x as u32 + (VITA_WIDTH * y as u32)) as usize] = FORMATED_FRAME_DATA[(x + (gameboy::WIDTH * y)) as usize];
+                vram[(x as u32 + (VITA_WIDTH * y as u32)) as usize] = gameboy.screen_data[(x + (gameboy::WIDTH * y)) as usize];
             }
         }
-
-        let sce_display_frame_buf = SceDisplayFrameBuf {
-            size: size_of::<SceDisplayFrameBuf>() as u32,
-            base: SCALED_FRAME_DATA.as_mut_ptr() as *mut core::ffi::c_void,
-            pitch: VITA_WIDTH,
-            pixelformat: SceDisplayPixelFormat::SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 as u32,
-            width: VITA_WIDTH,
-            height: VITA_HEIGHT,
-        };
-        sceDisplaySetFrameBuf(&sce_display_frame_buf, SceDisplaySetBufSync::SCE_DISPLAY_SETBUF_NEXTFRAME);
+        sceKernelUnlockMutex(mutex, 1);
         
         gameboy.spu.audio_data.clear();
 

@@ -13,7 +13,7 @@ use memory::Memory;
 
 pub(crate) const WIDTH: u16 = 160;
 pub(crate) const HEIGHT: u16 = 144;
-const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
+const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32);
 
 const CYCLES_PER_SECOND: u32 = 4_194_304;
 const FRAMES_PER_SECOND: f64 = 59.727500569606;
@@ -47,7 +47,7 @@ pub(crate) struct Gameboy {
     scanline_counter: i32,
     pub(crate) timer_counter: i32,
     pub(crate) divider_counter: i32,
-    pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
+    pub(crate) screen_data: [u32; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
     pub(crate) spu: Spu,
     cpu: Cpu,
