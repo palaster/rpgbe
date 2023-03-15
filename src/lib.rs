@@ -42,29 +42,6 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
-    let mut gameboy = gameboy::Gameboy::new();
-    
-    let data = include_bytes!("../../tetris.gb");
-
-    gameboy.memory.load_cartridge(data.to_vec());
-    
-    if sceCtrlSetSamplingMode(SceCtrlPadInputMode::SCE_CTRL_MODE_ANALOG) < 0 {
-        sceKernelExitProcess(0);
-        return 0;
-    }
-
-    // id, button, current_state, was_released
-    let mut button_array = [
-        (4, SceCtrlButtons::SCE_CTRL_CIRCLE, &mut false, &mut false),
-        (5, SceCtrlButtons::SCE_CTRL_CROSS, &mut false, &mut false),
-        (2, SceCtrlButtons::SCE_CTRL_UP, &mut false, &mut false),
-        (3, SceCtrlButtons::SCE_CTRL_DOWN, &mut false, &mut false),
-        (1, SceCtrlButtons::SCE_CTRL_LEFT, &mut false, &mut false),
-        (0, SceCtrlButtons::SCE_CTRL_RIGHT, &mut false, &mut false),
-        (7, SceCtrlButtons::SCE_CTRL_START, &mut false, &mut false),
-        (6, SceCtrlButtons::SCE_CTRL_SELECT, &mut false, &mut false)
-    ];
-
     const VITA_WIDTH: u32 = 960;
     const VITA_HEIGHT: u32 = 544;
 
@@ -80,8 +57,7 @@ pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
         reserved: [0; 10],
     };
 
-    let display_block = sceKernelAllocMemBlock(b"display\0".as_ptr(), SceKernelMemBlockType::SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
-        2 * 1024 * 1024, &mut display_block_options);
+    let display_block = sceKernelAllocMemBlock(b"display\0".as_ptr(), SceKernelMemBlockType::SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, 2 * 1024 * 1024, &mut display_block_options);
 
     let mut framebuffer_pointer: *mut core::ffi::c_void = core::ptr::null_mut();
     sceKernelGetMemBlockBase(display_block, &mut framebuffer_pointer);
@@ -98,6 +74,29 @@ pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
 
     let vram: &mut [u32] = from_raw_parts_mut(framebuffer_pointer as *mut u32, (2 * 1024 * 1024) / 4);
 
+    let mut gameboy = gameboy::Gameboy::new();
+    
+    let data = include_bytes!("../../tetris.gb");
+
+    gameboy.memory.load_cartridge(data.to_vec());
+    
+    if sceCtrlSetSamplingMode(SceCtrlPadInputMode::SCE_CTRL_MODE_ANALOG) < 0 {
+        sceKernelExitProcess(0);
+        return 0;
+    }
+
+    // id, button, current_state
+    let mut button_array = [
+        (4, SceCtrlButtons::SCE_CTRL_CIRCLE, &mut false),
+        (5, SceCtrlButtons::SCE_CTRL_CROSS, &mut false),
+        (2, SceCtrlButtons::SCE_CTRL_UP, &mut false),
+        (3, SceCtrlButtons::SCE_CTRL_DOWN, &mut false),
+        (1, SceCtrlButtons::SCE_CTRL_LEFT, &mut false),
+        (0, SceCtrlButtons::SCE_CTRL_RIGHT, &mut false),
+        (7, SceCtrlButtons::SCE_CTRL_START, &mut false),
+        (6, SceCtrlButtons::SCE_CTRL_SELECT, &mut false),
+    ];
+
     let mut ctrl: SceCtrlData = Default::default();
 
     loop {
@@ -112,19 +111,15 @@ pub unsafe fn main(_argc: isize, _argv: *const *const u8) -> isize {
 
         for button in &mut button_array {
             if ctrl.buttons == button.1 as u32 {
-                *button.2 = true;
+                if !*button.2 {
+                    gameboy.key_pressed(button.0);
+                    *button.2 = true;
+                }
             } else {
                 if *button.2 {
-                    *button.3 = true;
+                    gameboy.key_released(button.0);
+                    *button.2 = false;
                 }
-                *button.2 = false;
-            }
-            if *button.2 {
-                gameboy.key_pressed(button.0);
-            }
-            if !*button.2 && *button.3 {
-                *button.3 = false;
-                gameboy.key_released(button.0);
             }
         }
 
