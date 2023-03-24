@@ -1,4 +1,4 @@
-use crate::bit_logic;
+use super::bit_logic;
 use super::memory::Memory;
 use super::MemoryWriteResult;
 

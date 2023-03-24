@@ -1,5 +1,4 @@
-use crate::{ bit_logic, WIDTH };
-use super::Gameboy;
+use super::{bit_logic, WIDTH, Gameboy};
 
 enum Color {
     White,

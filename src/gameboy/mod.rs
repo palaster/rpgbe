@@ -1,9 +1,23 @@
-use crate::{ bit_logic, WIDTH, SCREEN_DATA_SIZE, TIME_BETWEEN_AUDIO_SAMPLING };
+pub const WIDTH: u16 = 160;
+pub const HEIGHT: u16 = 144;
+pub const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 
-mod spu;
-mod graphic;
+pub const CYCLES_PER_SECOND: u32 = 4_194_304;
+pub const FRAMES_PER_SECOND: f64 = 59.727500569606;
+pub const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
+pub const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
+pub const DURATION_BETWEEN_FRAMES: Duration = Duration::from_nanos(TIME_BETWEEN_FRAMES_IN_NANOSECONDS as u64);
+
+pub const SAMPLE_RATE: u16 = 44_100;
+pub const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
+
+mod bit_logic;
 mod cpu;
+mod graphic;
 mod memory;
+mod spu;
+
+use std::time::Duration;
 
 use spu::{ Spu, SoundChannel };
 use cpu::Cpu;

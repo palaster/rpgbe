@@ -2,8 +2,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
-use crate::bit_logic;
-use super::{ MemoryWriteResult, TAC};
+use super::{bit_logic, MemoryWriteResult, TAC};
 
 pub(crate) struct Memory {
     pub(crate) gamepad_state: u8,

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::thread;
-use std::time::{ Duration, Instant };
+use std::time::{ Instant };
 
 use sdl2::audio::{ AudioQueue, AudioSpecDesired };
 use sdl2::event::Event;
@@ -8,22 +8,6 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 
 mod gameboy;
-mod bit_logic;
-
-use gameboy::Gameboy;
-
-const WIDTH: u16 = 160;
-const HEIGHT: u16 = 144;
-const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
-
-const CYCLES_PER_SECOND: u32 = 4_194_304;
-const FRAMES_PER_SECOND: f64 = 59.727500569606;
-const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
-const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
-const DURATION_BETWEEN_FRAMES: Duration = Duration::from_nanos(TIME_BETWEEN_FRAMES_IN_NANOSECONDS as u64);
-
-const SAMPLE_RATE: u16 = 44_100;
-const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
 
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  
@@ -32,7 +16,7 @@ fn main() {
     let video_subsystem = sdl_context.video().expect("Couldn't init sdl video");
     let audio_subsystem = sdl_context.audio().expect("Couldn't init sdl audio");
 
-    let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
+    let window = video_subsystem.window("RPGBE", gameboy::WIDTH.into(), gameboy::HEIGHT.into())
         .position_centered()
         .resizable()
         .build()
@@ -45,10 +29,10 @@ fn main() {
 
     let texture_creator = canvas.texture_creator();
 
-    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
+    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, gameboy::WIDTH.into(), gameboy::HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
 
     let desired_spec = AudioSpecDesired {
-        freq: Some(SAMPLE_RATE as i32),
+        freq: Some(gameboy::SAMPLE_RATE as i32),
         channels: Some(2),
         samples: None,
     };
@@ -58,7 +42,7 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
-    let mut gameboy = Gameboy::new();
+    let mut gameboy = gameboy::Gameboy::new();
     gameboy.memory.load_cartridge(PathBuf::from(rom_path));
 
     'running: loop {
@@ -105,11 +89,11 @@ fn main() {
 
         let start = Instant::now();
         let mut cycles_this_frame: f64 = 0.0;
-        while cycles_this_frame <= CYCLES_PER_FRAME {
+        while cycles_this_frame <= gameboy::CYCLES_PER_FRAME {
             cycles_this_frame += gameboy.update() as f64;
         }
 
-        texture.update(None, &gameboy.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
+        texture.update(None, &gameboy.screen_data, gameboy::WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
@@ -118,8 +102,8 @@ fn main() {
         gameboy.spu.audio_data.clear();
 
         let elapsed_time = start.elapsed();
-        if elapsed_time <= DURATION_BETWEEN_FRAMES {
-            let time_remaining = DURATION_BETWEEN_FRAMES - elapsed_time;
+        if elapsed_time <= gameboy::DURATION_BETWEEN_FRAMES {
+            let time_remaining = gameboy::DURATION_BETWEEN_FRAMES - elapsed_time;
             thread::sleep(time_remaining);
         }
     }
