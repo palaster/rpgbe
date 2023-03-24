@@ -21,8 +21,8 @@ impl Gameboy {
             _ => (0, 0),
         };
 
-        let mut color: i32 = (if bit_logic::check_bit(palette, hi) { 1 } else { 0 } << 1) as i32;
-        color |= if bit_logic::check_bit(palette, lo) { 1 } else { 0 } as i32;
+        let mut color: i32 = (if bit_logic::check_bit(palette, hi) { 1 } else { 0 } << 1);
+        color |= if bit_logic::check_bit(palette, lo) { 1 } else { 0 };
         
         match color {
             0 => Color::White,
@@ -39,10 +39,8 @@ impl Gameboy {
 
         let mut using_window: bool = false;
 
-        if bit_logic::check_bit(lcd_control, 5) {
-            if window_y <= self.read_from_address(0xff44) {
-                using_window = true;
-            }
+        if bit_logic::check_bit(lcd_control, 5) && window_y <= self.read_from_address(0xff44) {
+            using_window = true;
         }
 
         let tile_data: u16 = if bit_logic::check_bit(lcd_control, 4) {
@@ -58,12 +56,10 @@ impl Gameboy {
             } else {
                 0x9800
             }
+        } else if bit_logic::check_bit(lcd_control, 6) {
+            0x9c00
         } else {
-            if bit_logic::check_bit(lcd_control, 6) {
-                0x9c00
-            } else {
-                0x9800
-            }
+            0x9800
         };
 
         let y_pos: u8 = if !using_window {
@@ -186,7 +182,7 @@ impl Gameboy {
                     let x_pix: u32 = 7_u32.wrapping_sub(tile_pixel as u32);
 
                     let pixel: u32 = (x_pos as u32).wrapping_add(x_pix);
-                    if (scanline < 0) || (scanline > 143) || (pixel > 159) {
+                    if !(0..=143).contains(&scanline) || (pixel > 159) {
                         continue;
                     }
 

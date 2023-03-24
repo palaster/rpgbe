@@ -82,7 +82,7 @@ impl Memory {
     }
 
     fn get_gamepad_state(&self) -> u8 {
-        let mut res: u8 = self.rom[0xff00 as usize] ^ 0xff;
+        let mut res: u8 = self.rom[0xff00_usize] ^ 0xff;
         if !bit_logic::check_bit(res, 4) {
             let top_gamepad: u8 = (self.gamepad_state >> 4) | 0xf0;
             res &= top_gamepad;

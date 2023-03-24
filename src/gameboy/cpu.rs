@@ -404,7 +404,7 @@ impl Cpu {
         let mut memory_write_results = Vec::new();
         memory_write_results.append(&mut self.push(memory, (self.pc >> 8) as u8));
         memory_write_results.append(&mut self.push(memory, self.pc as u8));
-        self.jp_from_word(0x0000 + value as u16);
+        self.jp_from_word(value as u16);
         memory_write_results
     }
 

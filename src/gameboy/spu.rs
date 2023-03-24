@@ -94,11 +94,9 @@ impl SoundChannel for SoundChannel1 {
         let sweep_negate = if bit_logic::check_bit(nr10, 3) { -1 } else { 1 };
         self.sweep_enabled = self.sweep_period != 0 && sweep_shift != 0;
         self.sweep_shadow = ((nr14 as i16) & 0b111) << 8 | (nr13 as i16);
-        if sweep_shift != 0 {
-            if (self.sweep_shadow as i32) + ((self.sweep_shadow as i32) >> sweep_shift) * sweep_negate > 2047 {
-                self.sweep_enabled = false;
-                self.enabled = false;
-            }
+        if sweep_shift != 0 && (self.sweep_shadow as i32) + ((self.sweep_shadow as i32) >> sweep_shift) * sweep_negate > 2047 {
+            self.sweep_enabled = false;
+            self.enabled = false;
         }
         if nr12 >> 3 == 0 { self.enabled = false; }
     }
@@ -173,7 +171,7 @@ impl SoundChannel for SoundChannel1 {
             if self.envelope_sweeps == 0 {
                 self.envelope_sweeps = nr12 & 0b111;
                 let new_amplitude = self.amplitude + if bit_logic::check_bit(nr12, 3) { 1 } else { -1 };
-                if new_amplitude >= 0 && new_amplitude <= 15 {
+                if (0..=15).contains(&new_amplitude) {
                     self.amplitude = new_amplitude;
                     self.frequency = self.amplitude;
                 } else {
@@ -260,7 +258,7 @@ impl SoundChannel for SoundChannel2 {
                 if self.envelope_sweeps == 0 {
                     self.envelope_sweeps = nr22 & 0b111;
                     let new_amplitude = self.amplitude + if bit_logic::check_bit(nr22, 3) { 1 } else { -1 };
-                    if new_amplitude >= 0 && new_amplitude <= 15 {
+                    if (0..=15).contains(&new_amplitude) {
                         self.amplitude = new_amplitude;
                     } else {
                         self.envelope_enabled = false;
@@ -432,7 +430,7 @@ impl SoundChannel for SoundChannel4 {
                     self.envelope_sweeps = nr42 & 0b111;
                     if self.envelope_sweeps != 0 {
                         let new_amplitude = self.amplitude + if bit_logic::check_bit(nr42, 3) { 1 } else { -1 };
-                        if new_amplitude >= 0 && new_amplitude <= 15 {
+                        if (0..=15).contains(&new_amplitude) {
                             self.amplitude = new_amplitude;
                         } else {
                             self.envelope_enabled = false;

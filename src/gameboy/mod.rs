@@ -66,13 +66,7 @@ impl Gameboy {
         let button: bool = key > 3;
 
         let key_req: u8 = self.raw_read_from_rom(0xff00);
-        let mut should_request_interrupt: bool = false;
-
-        if button && !bit_logic::check_bit(key_req, 5) {
-            should_request_interrupt = true;
-        } else if !button && !bit_logic::check_bit(key_req, 4) {
-            should_request_interrupt = true;
-        }
+        let should_request_interrupt: bool = (button && !bit_logic::check_bit(key_req, 5)) || (!button && !bit_logic::check_bit(key_req, 4));
 
         if should_request_interrupt && !previously_unset {
             self.request_interrupt(4);
