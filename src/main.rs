@@ -98,7 +98,7 @@ fn main() {
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
 
-        device.queue(&gameboy.spu.audio_data);
+        let _ = device.queue_audio(&gameboy.spu.audio_data);
         gameboy.spu.audio_data.clear();
 
         let elapsed_time = start.elapsed();

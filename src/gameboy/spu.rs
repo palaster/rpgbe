@@ -102,18 +102,16 @@ impl SoundChannel for SoundChannel1 {
 
     fn update(&mut self, memory: &mut Memory) {
         let nr10 = memory.read_from_memory(0xff10);
-        let nr11 = memory.read_from_memory(0xff11);
+        let duty = memory.read_from_memory(0xff11) >> 6;
         let nr12 = memory.read_from_memory(0xff12);
         let nr13 = memory.read_from_memory(0xff13);
         let nr14 = memory.read_from_memory(0xff14);
 
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
-            self.frame_sequence_timer = 8192;
-            self.frame_sequence += 1;
-            self.frame_sequence &= 8;
+            self.frame_sequence_timer = (8192 + 1) & 8;
 
-            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr14, 6)  && self.length != 0 {
+            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr14, 6) && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
                 if self.length == 0 { self.enabled = false; }
             }
@@ -152,13 +150,11 @@ impl SoundChannel for SoundChannel1 {
         if self.frequency_timer == 0 {
             let new_frequency_timer = (((nr14 as u16) & 0b111) << 8) | (nr13 as u16);
             self.frequency_timer = (2048 - new_frequency_timer) * 4;
-            self.wave_duty_position += 1;
-            self.wave_duty_position %= 8;
+            self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
         }
 
-        let duty = nr11 >> 6;
         if WAVE_FORM[duty as usize][self.wave_duty_position as usize] == 1 {
             self.frequency = self.amplitude;
         } else {
