@@ -9,6 +9,17 @@ use sdl2::pixels::PixelFormatEnum;
 
 mod gameboy;
 
+#[link(name = "SceAudioIn_stub")]
+#[link(name = "SceAudio_stub")]
+#[link(name = "SceCommonDialog_stub")]
+#[link(name = "SceCtrl_stub")]
+#[link(name = "SceDisplay_stub")]
+#[link(name = "SceGxm_stub")]
+#[link(name = "SceHid_stub")]
+#[link(name = "SceMotion_stub")]
+#[link(name = "SceTouch_stub")]
+extern "C" {}
+
 fn main() {
     let rom_path = std::env::args().nth(1).expect("No ROM path given");  
 

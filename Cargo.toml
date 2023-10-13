@@ -2,9 +2,35 @@
 name = "rpgbe"
 version = "0.1.0"
 authors = ["Pat Laster <palaster307@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dependencies.vitasdk-sys]
+version = "0.3.2"
+features = [
+    "SceGxm_stub",
+    "SceTouch_stub",
+    "SceAudioIn_stub",
+    "SceAudio_stub",
+    "SceCommonDialog_stub",
+    "SceCtrl_stub",
+    "SceDisplay_stub",
+    "SceGxm_stub",
+    "SceHid_stub",
+    "SceMotion_stub",
+    "SceTouch_stub",
+]
+
 [dependencies]
 sdl2 = "0.35.2"
+
+[profile.release]
+panic = 'unwind'
+lto = true
+opt-level = 2
+
+[package.metadata.vita]
+title_id = "RPGBE0001"
+title_name = "RPGBE"
+assets = "./static"
