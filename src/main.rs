@@ -9,15 +9,27 @@ use sdl2::pixels::PixelFormatEnum;
 
 mod gameboy;
 
-#[link(name = "SceAudioIn_stub")]
-#[link(name = "SceAudio_stub")]
-#[link(name = "SceCommonDialog_stub")]
-#[link(name = "SceCtrl_stub")]
-#[link(name = "SceDisplay_stub")]
-#[link(name = "SceGxm_stub")]
-#[link(name = "SceHid_stub")]
-#[link(name = "SceMotion_stub")]
-#[link(name = "SceTouch_stub")]
+#[link(
+    name = "SceAudioIn_stub",
+    kind = "static",
+    modifiers = "+whole-archive"
+)]
+#[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
+#[link(
+    name = "SceCommonDialog_stub",
+    kind = "static",
+    modifiers = "+whole-archive"
+)]
+#[link(name = "SceCtrl_stub", kind = "static", modifiers = "+whole-archive")]
+#[link(
+    name = "SceDisplay_stub",
+    kind = "static",
+    modifiers = "+whole-archive"
+)]
+#[link(name = "SceGxm_stub", kind = "static", modifiers = "+whole-archive")]
+#[link(name = "SceHid_stub", kind = "static", modifiers = "+whole-archive")]
+#[link(name = "SceMotion_stub", kind = "static", modifiers = "+whole-archive")]
+#[link(name = "SceTouch_stub", kind = "static", modifiers = "+whole-archive")]
 extern "C" {}
 
 fn main() {
