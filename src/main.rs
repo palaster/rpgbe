@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::thread;
-use std::time::{ Instant };
+use std::time::Instant;
 
 use sdl2::audio::{ AudioQueue, AudioSpecDesired };
 use sdl2::event::Event;
