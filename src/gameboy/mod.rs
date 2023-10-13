@@ -174,7 +174,9 @@ impl Gameboy {
         }
         self.update_timer(cycles);
         self.update_graphics(cycles);
+        /* TODO: Push to another thread
         self.update_audio(cycles);
+        */
         cycles += self.do_interrupts();
         cycles
     }

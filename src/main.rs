@@ -3,29 +3,17 @@ use std::thread;
 use std::time::Instant;
 
 use sdl2::audio::{ AudioQueue, AudioSpecDesired };
+use sdl2::controller::Button;
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 
 mod gameboy;
 
-#[link(
-    name = "SceAudioIn_stub",
-    kind = "static",
-    modifiers = "+whole-archive"
-)]
+#[link(name = "SceAudioIn_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(
-    name = "SceCommonDialog_stub",
-    kind = "static",
-    modifiers = "+whole-archive"
-)]
+#[link(name = "SceCommonDialog_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceCtrl_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(
-    name = "SceDisplay_stub",
-    kind = "static",
-    modifiers = "+whole-archive"
-)]
+#[link(name = "SceDisplay_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceGxm_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceHid_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceMotion_stub", kind = "static", modifiers = "+whole-archive")]
@@ -33,11 +21,21 @@ mod gameboy;
 extern "C" {}
 
 fn main() {
-    let rom_path = std::env::args().nth(1).expect("No ROM path given");  
+    // let rom_path = std::env::args().nth(1).expect("No ROM path given");
 
     let sdl_context = sdl2::init().expect("Couldn't init sdl");
     let video_subsystem = sdl_context.video().expect("Couldn't init sdl video");
     let audio_subsystem = sdl_context.audio().expect("Couldn't init sdl audio");
+    let game_controller_subsystem = sdl_context.game_controller().expect("Couldn't init sdl game_controller");
+
+    let number_of_joystics = game_controller_subsystem.num_joysticks().expect("Couldn't find any joysticks");
+    let _controller = (0..number_of_joystics)
+        .find_map(|id| {
+            if !game_controller_subsystem.is_game_controller(id) {
+                return None;
+            }
+            game_controller_subsystem.open(id).ok()
+        }).expect("Couldn't open any controllers");
 
     let window = video_subsystem.window("RPGBE", gameboy::WIDTH.into(), gameboy::HEIGHT.into())
         .position_centered()
@@ -66,7 +64,8 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
     let mut gameboy = gameboy::Gameboy::new();
-    gameboy.memory.load_cartridge(PathBuf::from(rom_path));
+    gameboy.memory.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
+    //gameboy.memory.load_cartridge_from_path(PathBuf::from(rom_path));
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -74,32 +73,32 @@ fn main() {
                 Event::Quit {..} => {
                     break 'running
                 },
-                Event::KeyDown { keycode: Some(key_down), repeat: false, .. } => {
-                    let key_code: i8 = match key_down {
-                        Keycode::W => 2, // UP
-                        Keycode::A => 1, // LEFT
-                        Keycode::S => 3, // DOWN
-                        Keycode::D => 0, // RIGHT
-                        Keycode::H => 5, // B
-                        Keycode::U => 4, // A
-                        Keycode::B => 6, // SELECT
-                        Keycode::N => 7, // START
+                Event::ControllerButtonDown { button, .. } => {
+                    let key_code: i8 = match button {
+                        Button::DPadUp => 2, // UP
+                        Button::DPadLeft => 1, // LEFT
+                        Button::DPadDown => 3, // DOWN
+                        Button::DPadRight => 0, // RIGHT
+                        Button::A => 5, // B
+                        Button::B => 4, // A
+                        Button::Back => 6, // SELECT
+                        Button::Start => 7, // START
                         _ => -1,
                     };
                     if key_code >= 0 {
                         gameboy.key_pressed(key_code as u8);
                     }
                 },
-                Event::KeyUp { keycode: Some(key_up), repeat: false, .. } => {
-                    let key_code: i8 = match key_up {
-                        Keycode::W => 2, // UP
-                        Keycode::A => 1, // LEFT
-                        Keycode::S => 3, // DOWN
-                        Keycode::D => 0, // RIGHT
-                        Keycode::H => 5, // B
-                        Keycode::U => 4, // A
-                        Keycode::B => 6, // SELECT
-                        Keycode::N => 7, // START
+                Event::ControllerButtonUp { button, .. } => {
+                    let key_code: i8 = match button {
+                        Button::DPadUp => 2, // UP
+                        Button::DPadLeft => 1, // LEFT
+                        Button::DPadDown => 3, // DOWN
+                        Button::DPadRight => 0, // RIGHT
+                        Button::A => 5, // B
+                        Button::B => 4, // A
+                        Button::Back => 6, // SELECT
+                        Button::Start => 7, // START
                         _ => -1,
                     };
                     if key_code >= 0 {
