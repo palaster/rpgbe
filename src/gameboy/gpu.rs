@@ -49,7 +49,8 @@ impl Gpu {
 
         let mut using_window: bool = false;
 
-        if bit_logic::check_bit(lcd_control, 5) && window_y <= memory.read_from_memory(0xff44) {
+        let ff44 = memory.read_from_memory(0xff44);
+        if bit_logic::check_bit(lcd_control, 5) && window_y <= ff44 {
             using_window = true;
         }
 
@@ -73,9 +74,9 @@ impl Gpu {
         };
 
         let y_pos: u8 = if !using_window {
-            scroll_y.wrapping_add(memory.read_from_memory(0xff44))
+            scroll_y.wrapping_add(ff44)
         } else {
-            memory.read_from_memory(0xff44).wrapping_sub(window_y)
+            ff44.wrapping_sub(window_y)
         };
 
         let tile_row: u16 = (y_pos as u16).wrapping_div(8).wrapping_mul(32);
@@ -119,7 +120,7 @@ impl Gpu {
                 _ => (0, 0, 0),
             };
 
-            let finally: u8 = memory.read_from_memory(0xff44);
+            let finally: u8 = ff44;
             if finally > 143 || pixel > 159 {
                 continue;
             }
