@@ -115,7 +115,7 @@ fn main() {
             cycles_this_frame += gameboy.update() as f64;
         }
 
-        texture.update(None, &gameboy.screen_data, gameboy::WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
+        texture.update(None, &gameboy.gpu.screen_data, gameboy::WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();

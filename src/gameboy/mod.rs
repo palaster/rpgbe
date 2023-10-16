@@ -13,15 +13,16 @@ pub const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as 
 
 mod bit_logic;
 mod cpu;
-mod graphic;
+mod gpu;
 mod memory;
 mod spu;
 
 use std::time::Duration;
 
-use spu::{ Spu, SoundChannel };
 use cpu::Cpu;
+use gpu::Gpu;
 use memory::Memory;
+use spu::{ Spu, SoundChannel };
 
 const IS_DEBUG_MODE: bool = false;
 
@@ -50,11 +51,10 @@ pub(crate) struct Gameboy {
     scanline_counter: i32,
     pub(crate) timer_counter: i32,
     pub(crate) divider_counter: i32,
-    pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
-    scanline_bg: [bool; WIDTH as usize],
-    pub(crate) spu: Spu,
     cpu: Cpu,
+    pub(crate) gpu: Gpu,
     pub(crate) memory: Memory,
+    pub(crate) spu: Spu,
 }
 
 impl Gameboy {
@@ -64,11 +64,10 @@ impl Gameboy {
             scanline_counter: SCANLINE_COUNTER_START as i32,
             timer_counter: 0,
             divider_counter: 0,
-            screen_data: [0; SCREEN_DATA_SIZE as usize],
-            scanline_bg: [false; WIDTH as usize],
-            spu: Spu::new(),
             cpu: Cpu::new(),
+            gpu: Gpu::new(),
             memory: Memory::new(),
+            spu: Spu::new(),
         }
     }
 
@@ -299,7 +298,7 @@ impl Gameboy {
             } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
                 self.raw_write_to_rom(0xff44, 0);
             } else if current_line < VERTICAL_BLANK_SCAN_LINE {
-                self.draw_scanline();
+                self.gpu.draw_scanline(&self.memory);
             }
         }
     }
