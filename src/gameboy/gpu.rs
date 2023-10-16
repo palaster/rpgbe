@@ -1,4 +1,8 @@
-use super::{bit_logic, WIDTH, SCREEN_DATA_SIZE, Memory};
+use super::{bit_logic, Memory, WIDTH, SCREEN_DATA_SIZE};
+
+const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
+const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
+const SCANLINE_COUNTER_START: u16 = 456;
 
 enum Color {
     White,
@@ -8,6 +12,7 @@ enum Color {
 }
 
 pub(crate) struct Gpu {
+    scanline_counter: i32,
     pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
 }
@@ -15,6 +20,7 @@ pub(crate) struct Gpu {
 impl Gpu {
     pub(crate) fn new() -> Gpu {
         Gpu {
+            scanline_counter: SCANLINE_COUNTER_START as i32,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
             scanline_bg: [false; WIDTH as usize],
         }
@@ -217,6 +223,86 @@ impl Gpu {
         }
         if bit_logic::check_bit(control, 1) {
             self.render_sprites(memory);
+        }
+    }
+
+    fn is_lcd_enabled(&self, memory: &Memory) -> bool {
+        bit_logic::check_bit(memory.read_from_memory(0xff40), 7)
+    }
+
+    fn set_lcd_status(&mut self, memory: &mut Memory) {
+        let mut status: u8 = memory.read_from_memory(0xff41);
+        if !self.is_lcd_enabled(memory) {
+            self.scanline_counter = SCANLINE_COUNTER_START as i32;
+            memory.rom[0xff44 as usize] = 0;
+            status &= 252;
+            status = bit_logic::set_bit(status, 0);
+            memory.write_to_memory(0xff41, status);
+            return;
+        }
+        let current_line: u8 = memory.read_from_memory(0xff44);
+        let current_mode: u8 = status & 0x3;
+        let mode: u8;
+        let mut req_int: bool = false;
+
+        if current_line >= 144 {
+            mode = 1;
+            status = bit_logic::set_bit(status, 0);
+            status = bit_logic::reset_bit(status, 1);
+            req_int = bit_logic::check_bit(status, 4);
+        } else {
+            let mode_2_bounds: i32 = 376; // 456 - 80
+            let mode_3_bounds: i32 = 204; // mode_2_bounds - 172
+            if self.scanline_counter >= mode_2_bounds {
+                mode = 2;
+                status = bit_logic::set_bit(status, 1);
+                status = bit_logic::reset_bit(status, 0);
+                req_int = bit_logic::check_bit(status, 5);
+            } else if self.scanline_counter >= mode_3_bounds {
+                mode = 3;
+                status = bit_logic::set_bit(status, 1);
+                status = bit_logic::set_bit(status, 0);
+            } else {
+                mode = 0;
+                status = bit_logic::reset_bit(status, 1);
+                status = bit_logic::reset_bit(status, 0);
+                req_int = bit_logic::check_bit(status, 3);
+            }
+        }
+        if req_int && current_mode != mode {
+            memory.request_interrupt(1);
+        }
+        if current_line == memory.read_from_memory(0xff45) {
+            status = bit_logic::set_bit(status, 2);
+            if bit_logic::check_bit(status, 6) {
+                memory.request_interrupt(1);
+            }
+        } else {
+            status = bit_logic::reset_bit(status, 2);
+        }
+        memory.write_to_memory(0xff41, status);
+    }
+
+    pub(crate) fn update_graphics(&mut self, memory: &mut Memory, cycles: u8) {
+        self.set_lcd_status(memory);
+        if self.is_lcd_enabled(&memory) {
+            self.scanline_counter -= cycles as i32;
+        } else {
+            return;
+        }
+        if self.scanline_counter <= 0 {
+            let current_line: u8 = {
+                memory.rom[0xff44 as usize] = memory.rom[0xff44 as usize].wrapping_add(1);
+                memory.read_from_memory(0xff44)
+            };
+            self.scanline_counter = SCANLINE_COUNTER_START as i32;
+            if current_line == VERTICAL_BLANK_SCAN_LINE {
+                memory.request_interrupt(0);
+            } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
+                memory.rom[0xff44 as usize] = 0;
+            } else if current_line < VERTICAL_BLANK_SCAN_LINE {
+                self.draw_scanline(&memory);
+            }
         }
     }
 }

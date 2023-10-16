@@ -262,4 +262,8 @@ impl Memory {
         }
         memory_write_results
     }
+
+    pub(crate) fn request_interrupt(&mut self, interrupt_id: u8) {
+        self.write_to_memory(0xff0f, bit_logic::set_bit(self.read_from_memory(0xff0f), interrupt_id));
+    }
 }

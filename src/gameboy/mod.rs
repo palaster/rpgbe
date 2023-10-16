@@ -16,6 +16,7 @@ mod cpu;
 mod gpu;
 mod memory;
 mod spu;
+mod timer;
 
 use std::time::Duration;
 
@@ -23,21 +24,11 @@ use cpu::Cpu;
 use gpu::Gpu;
 use memory::Memory;
 use spu::{ Spu, SoundChannel };
+use timer::Timer;
 
 const IS_DEBUG_MODE: bool = false;
 
-const TIMA: u16 = 0xff05;
-const TMA: u16 = 0xff06;
 const TAC: u16 = 0xff07;
-
-const FREQUENCY_4096: u16 = 1024; // CYCLES_PER_SECOND / 4096
-const FREQUENCY_262144: u16 = 16; // CYCLES_PER_SECOND / 262144
-const FREQUENCY_65536: u16 = 64; // CYCLES_PER_SECOND / 65536
-const FREQUENCY_16384: u16 = 256; // CYCLES_PER_SECOND / 16384
-
-const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
-const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
-const SCANLINE_COUNTER_START: u16 = 456;
 
 pub(crate) enum MemoryWriteResult {
     None,
@@ -48,26 +39,22 @@ pub(crate) enum MemoryWriteResult {
 
 pub(crate) struct Gameboy {
     target_pc: i32,
-    scanline_counter: i32,
-    pub(crate) timer_counter: i32,
-    pub(crate) divider_counter: i32,
     cpu: Cpu,
     pub(crate) gpu: Gpu,
     pub(crate) memory: Memory,
     pub(crate) spu: Spu,
+    pub(crate) timer: Timer,
 }
 
 impl Gameboy {
     pub(crate) fn new() -> Gameboy {
         Gameboy {
             target_pc: -1,
-            scanline_counter: SCANLINE_COUNTER_START as i32,
-            timer_counter: 0,
-            divider_counter: 0,
             cpu: Cpu::new(),
             gpu: Gpu::new(),
             memory: Memory::new(),
             spu: Spu::new(),
+            timer: Timer::new(),
         }
     }
 
@@ -82,7 +69,7 @@ impl Gameboy {
         let should_request_interrupt: bool = (button && !bit_logic::check_bit(key_req, 5)) || (!button && !bit_logic::check_bit(key_req, 4));
 
         if should_request_interrupt && !previously_unset {
-            self.request_interrupt(4);
+            self.memory.request_interrupt(4);
         }
     }
 
@@ -98,10 +85,10 @@ impl Gameboy {
         for memory_result in self.memory.write_to_memory(address, value) {
             match memory_result {
                 MemoryWriteResult::ResetDividerCounter => {
-                    self.divider_counter = 0
+                    self.timer.divider_counter = 0
                 },
                 MemoryWriteResult::SetTimerCounter => {
-                    self.set_clock_freq()
+                    self.timer.set_clock_freq(&self.memory)
                 },
                 MemoryWriteResult::ResetChannel(id, length) => {
                     match id {
@@ -133,10 +120,10 @@ impl Gameboy {
             for memory_result in memory_write_results {
                 match memory_result {
                     MemoryWriteResult::ResetDividerCounter => {
-                        self.divider_counter = 0
+                        self.timer.divider_counter = 0
                     },
                     MemoryWriteResult::SetTimerCounter => {
-                        self.set_clock_freq()
+                        self.timer.set_clock_freq(&self.memory)
                     },
                     MemoryWriteResult::ResetChannel(id, length) => {
                         match id {
@@ -171,186 +158,32 @@ impl Gameboy {
                 self.target_pc = -1;
             }
         }
-        self.update_timer(cycles);
-        self.update_graphics(cycles);
-        /* TODO: Push to another thread
-        self.update_audio(cycles);
-        */
+
+        for memory_result in self.timer.update_timer(&mut self.memory, cycles) {
+            match memory_result {
+                MemoryWriteResult::ResetDividerCounter => {
+                    self.timer.divider_counter = 0
+                },
+                MemoryWriteResult::SetTimerCounter => {
+                    self.timer.set_clock_freq(&self.memory)
+                },
+                MemoryWriteResult::ResetChannel(id, length) => {
+                    match id {
+                        0 => { self.spu.sound_channel_1.reset(&self.memory, length) },
+                        1 => { self.spu.sound_channel_2.reset(&self.memory, length) },
+                        2 => { self.spu.sound_channel_3.reset(&self.memory, length) },
+                        3 => { self.spu.sound_channel_4.reset(&self.memory, length) },
+                        _ => { },
+                    }
+                },
+                _ => { },
+            }
+        }
+        self.gpu.update_graphics(&mut self.memory, cycles);
+        //self.spu.update_audio(&mut self.memory, cycles);
+
         cycles += self.do_interrupts();
         cycles
-    }
-
-    fn is_clock_enabled(&self) -> bool {
-        bit_logic::check_bit(self.read_from_address(TAC), 2)
-    }
-
-    fn get_clock_freq(&self) -> u8 {
-        self.read_from_address(TAC) & 0x3
-    }
-
-    fn set_clock_freq(&mut self) {
-        match self.get_clock_freq() {
-            0 => { self.timer_counter = FREQUENCY_4096 as i32 },
-            1 => { self.timer_counter = FREQUENCY_262144 as i32 },
-            2 => { self.timer_counter = FREQUENCY_65536 as i32 },
-            3 => { self.timer_counter = FREQUENCY_16384 as i32 },
-            _ => { },
-        }
-    }
-
-    fn do_divider_register(&mut self, cycles: u8) {
-        self.divider_counter += cycles as i32;
-        if self.divider_counter >= 255 {
-            self.divider_counter = 0;
-            self.raw_write_to_rom(0xff04, self.raw_read_from_rom(0xff04).wrapping_add(1));
-        }
-    }
-
-    fn update_timer(&mut self, cycles: u8) {
-        self.do_divider_register(cycles);
-        if self.is_clock_enabled() {
-            self.timer_counter -= cycles as i32;
-            if self.timer_counter <= 0 {
-                self.set_clock_freq();
-                let (tima, tma): (u8, u8) = (self.read_from_address(TIMA), self.read_from_address(TMA));
-                if tima == 255 {
-                    self.write_to_address(TIMA, tma);
-                    self.request_interrupt(2);
-                } else {
-                    self.write_to_address(TIMA, tima.wrapping_add(1))
-                }
-            }
-        }
-    }
-
-    fn is_lcd_enabled(&self) -> bool {
-        bit_logic::check_bit(self.read_from_address(0xff40), 7)
-    }
-
-    fn set_lcd_status(&mut self) {
-        let mut status: u8 = self.read_from_address(0xff41);
-        if !self.is_lcd_enabled() {
-            self.scanline_counter = SCANLINE_COUNTER_START as i32;
-            self.raw_write_to_rom(0xff44, 0);
-            status &= 252;
-            status = bit_logic::set_bit(status, 0);
-            self.write_to_address(0xff41, status);
-            return;
-        }
-        let current_line: u8 = self.read_from_address(0xff44);
-        let current_mode: u8 = status & 0x3;
-        let mode: u8;
-        let mut req_int: bool = false;
-
-        if current_line >= 144 {
-            mode = 1;
-            status = bit_logic::set_bit(status, 0);
-            status = bit_logic::reset_bit(status, 1);
-            req_int = bit_logic::check_bit(status, 4);
-        } else {
-            let mode_2_bounds: i32 = 376; // 456 - 80
-            let mode_3_bounds: i32 = 204; // mode_2_bounds - 172
-            if self.scanline_counter >= mode_2_bounds {
-                mode = 2;
-                status = bit_logic::set_bit(status, 1);
-                status = bit_logic::reset_bit(status, 0);
-                req_int = bit_logic::check_bit(status, 5);
-            } else if self.scanline_counter >= mode_3_bounds {
-                mode = 3;
-                status = bit_logic::set_bit(status, 1);
-                status = bit_logic::set_bit(status, 0);
-            } else {
-                mode = 0;
-                status = bit_logic::reset_bit(status, 1);
-                status = bit_logic::reset_bit(status, 0);
-                req_int = bit_logic::check_bit(status, 3);
-            }
-        }
-        if req_int && current_mode != mode {
-            self.request_interrupt(1);
-        }
-        if current_line == self.read_from_address(0xff45) {
-            status = bit_logic::set_bit(status, 2);
-            if bit_logic::check_bit(status, 6) {
-                self.request_interrupt(1);
-            }
-        } else {
-            status = bit_logic::reset_bit(status, 2);
-        }
-        self.write_to_address(0xff41, status);
-    }
-
-    fn update_graphics(&mut self, cycles: u8) {
-        self.set_lcd_status();
-        if self.is_lcd_enabled() {
-            self.scanline_counter -= cycles as i32;
-        } else {
-            return;
-        }
-        if self.scanline_counter <= 0 {
-            let current_line: u8 = {
-                self.raw_write_to_rom(0xff44, self.raw_read_from_rom(0xff44).wrapping_add(1));
-                self.read_from_address(0xff44)
-            };
-            self.scanline_counter = SCANLINE_COUNTER_START as i32;
-            if current_line == VERTICAL_BLANK_SCAN_LINE {
-                self.request_interrupt(0);
-            } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
-                self.raw_write_to_rom(0xff44, 0);
-            } else if current_line < VERTICAL_BLANK_SCAN_LINE {
-                self.gpu.draw_scanline(&self.memory);
-            }
-        }
-    }
-
-    fn update_audio(&mut self, cycles: u8) {
-        for _ in 0..cycles {
-            self.spu.sound_channel_1.update(&mut self.memory);
-            self.spu.sound_channel_2.update(&mut self.memory);
-            self.spu.sound_channel_3.update(&mut self.memory);
-            self.spu.sound_channel_4.update(&mut self.memory);
-
-            if self.spu.audio_fill_timer == 0 {
-                self.spu.audio_fill_timer = TIME_BETWEEN_AUDIO_SAMPLING;
-                let (_enable_left_vin, left_volume, _enable_right_vin, right_volume) = {
-                    let nr50 = self.read_from_address(0xff24);
-                    (
-                        nr50 & 0x80 != 0,
-                        (nr50 & 0x70) >> 4,
-                        nr50 & 0x8 != 0,
-                        nr50 & 0x7
-                    )
-                };
-                let channel_1 = self.spu.sound_channel_1.get_amplitude(&self.memory);
-                let channel_2 = self.spu.sound_channel_2.get_amplitude(&self.memory);
-                let channel_3 = self.spu.sound_channel_3.get_amplitude(&self.memory);
-                let channel_4 = self.spu.sound_channel_4.get_amplitude(&self.memory);
-                let nr51 = self.read_from_address(0xff25);
-                if nr51 != 0 {
-                    let mut left_results = 0.0;
-                    left_results += if bit_logic::check_bit(nr51, 4) { channel_1 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 5) { channel_2 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 6) { channel_3 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 7) { channel_4 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    self.spu.audio_data.push(left_results);
-                    let mut right_results = 0.0;
-                    right_results += if bit_logic::check_bit(nr51, 0) { channel_1 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 1) { channel_2 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 2) { channel_3 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 3) { channel_4 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    self.spu.audio_data.push(right_results);
-                } else {
-                    self.spu.audio_data.push(0.0);
-                    self.spu.audio_data.push(0.0);
-                }
-            } else {
-                self.spu.audio_fill_timer = self.spu.audio_fill_timer.saturating_sub(1);
-            }
-        }
-    }
-
-    fn request_interrupt(&mut self, interrupt_id: u8) {
-        self.write_to_address(0xff0f, bit_logic::set_bit(self.read_from_address(0xff0f), interrupt_id));
     }
 
     fn service_interrupt(&mut self, interrupt_id: u8) {

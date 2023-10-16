@@ -35,6 +35,52 @@ impl Spu {
             sound_channel_4: SoundChannel4::new(),
         }
     }
+
+    pub(crate) fn update_audio(&mut self, memory: &mut Memory, cycles: u8) {
+        for _ in 0..cycles {
+            self.sound_channel_1.update(memory);
+            self.sound_channel_2.update(memory);
+            self.sound_channel_3.update(memory);
+            self.sound_channel_4.update(memory);
+
+            if self.audio_fill_timer == 0 {
+                self.audio_fill_timer = TIME_BETWEEN_AUDIO_SAMPLING;
+                let (_enable_left_vin, left_volume, _enable_right_vin, right_volume) = {
+                    let nr50 = memory.read_from_memory(0xff24);
+                    (
+                        nr50 & 0x80 != 0,
+                        (nr50 & 0x70) >> 4,
+                        nr50 & 0x8 != 0,
+                        nr50 & 0x7
+                    )
+                };
+                let channel_1 = self.sound_channel_1.get_amplitude(memory);
+                let channel_2 = self.sound_channel_2.get_amplitude(memory);
+                let channel_3 = self.sound_channel_3.get_amplitude(memory);
+                let channel_4 = self.sound_channel_4.get_amplitude(memory);
+                let nr51 = memory.read_from_memory(0xff25);
+                if nr51 != 0 {
+                    let mut left_results = 0.0;
+                    left_results += if bit_logic::check_bit(nr51, 4) { channel_1 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 5) { channel_2 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 6) { channel_3 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 7) { channel_4 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    self.audio_data.push(left_results);
+                    let mut right_results = 0.0;
+                    right_results += if bit_logic::check_bit(nr51, 0) { channel_1 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 1) { channel_2 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 2) { channel_3 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 3) { channel_4 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    self.audio_data.push(right_results);
+                } else {
+                    self.audio_data.push(0.0);
+                    self.audio_data.push(0.0);
+                }
+            } else {
+                self.audio_fill_timer = self.audio_fill_timer.saturating_sub(1);
+            }
+        }
+    }
 }
 
 pub(crate) struct SoundChannel1 {
@@ -155,11 +201,11 @@ impl SoundChannel for SoundChannel1 {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
         }
 
-        if WAVE_FORM[duty as usize][self.wave_duty_position as usize] == 1 {
-            self.frequency = self.amplitude;
+        self.frequency = if WAVE_FORM[duty as usize][self.wave_duty_position as usize] == 1 {
+            self.amplitude
         } else {
-            self.frequency = 0;
-        }
+            0
+        };
         
         if self.frame_sequence == 7 && self.frame_sequence_timer == 8192 && self.envelope_enabled && (nr12 & 0b111) != 0 {
             self.envelope_sweeps = self.envelope_sweeps.wrapping_sub(1);
@@ -231,8 +277,7 @@ impl SoundChannel for SoundChannel2 {
         if self.frequency_timer == 0 {
             let new_frequency_timer = (((nr24 as u16) & 0b111) << 8) | (nr23 as u16);
             self.frequency_timer = (2048 - new_frequency_timer) * 4;
-            self.wave_duty_position += 1;
-            self.wave_duty_position %= 8;
+            self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
         }
@@ -240,10 +285,9 @@ impl SoundChannel for SoundChannel2 {
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
-            self.frame_sequence += 1;
-            self.frame_sequence &= 8;
+            self.frame_sequence = (self.frame_sequence + 1) & 8;
 
-            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr24, 6)  && self.length != 0 {
+            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr24, 6) && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
                 if self.length == 0 { self.enabled = false; }
             }
@@ -317,8 +361,7 @@ impl SoundChannel for SoundChannel3 {
         if self.frequency_timer == 0 {
             let new_frequency_timer = (((nr34 as u16) & 0b111) << 8) | (nr33 as u16);
             self.frequency_timer = (2048 - new_frequency_timer) * 2;
-            self.wave_index += 1;
-            self.wave_index %= 32;
+            self.wave_index = (self.wave_index + 1) % 32;
         } else {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
         }
@@ -326,8 +369,7 @@ impl SoundChannel for SoundChannel3 {
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
-            self.frame_sequence += 1;
-            self.frame_sequence &= 8;
+            self.frame_sequence = (self.frame_sequence + 1) & 8;
 
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr34, 6)  && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
@@ -411,8 +453,7 @@ impl SoundChannel for SoundChannel4 {
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
-            self.frame_sequence += 1;
-            self.frame_sequence &= 8;
+            self.frame_sequence = (self.frame_sequence + 1) & 8;
 
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr44, 6)  && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
@@ -438,11 +479,9 @@ impl SoundChannel for SoundChannel4 {
         if self.frequency_timer == 0 {
             self.frequency_timer = (SOUND_CHANNEL_4_DIVISOR[(nr43 as usize) & 0b111] as u16) << ((nr43 as u16) >> 4);
             let xor_rs = (self.lfsr & 1) ^ ((self.lfsr & 0b10) >> 1);
-            self.lfsr >>= 1;
-            self.lfsr |= xor_rs << 14;
+            self.lfsr = (self.lfsr >> 1) | (xor_rs << 14);
             if bit_logic::check_bit(nr43, 3) {
-                self.lfsr |= xor_rs << 6;
-                self.lfsr &= 0x7f;
+                self.lfsr = (self.lfsr | (xor_rs << 6)) & 0x7f;
             }
         } else {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
