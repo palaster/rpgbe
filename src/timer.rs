@@ -45,7 +45,7 @@ impl Timer {
         self.divider_counter += cycles as i32;
         if self.divider_counter >= 255 {
             self.divider_counter = 0;
-            memory.rom[0xff04 as usize] = memory.rom[0xff04 as usize].wrapping_add(1);
+            memory.rom[0xff04_usize] = memory.rom[0xff04_usize].wrapping_add(1);
         }
 
         if self.is_clock_enabled(memory) {

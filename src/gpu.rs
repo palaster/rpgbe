@@ -17,7 +17,7 @@ enum Color {
 
 pub struct Gpu {
     scanline_counter: i32,
-    pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
+    pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
 }
 
@@ -238,9 +238,8 @@ impl Gpu {
         let mut status: u8 = memory.read_from_memory(0xff41);
         if !self.is_lcd_enabled(memory) {
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
-            memory.rom[0xff44 as usize] = 0;
-            status &= 252;
-            status = bit_logic::set_bit(status, 0);
+            memory.rom[0xff44_usize] = 0;
+            status = bit_logic::set_bit(status & 252, 0);
             memory.write_to_memory(0xff41, status);
             return;
         }
@@ -289,23 +288,23 @@ impl Gpu {
 
     pub(crate) fn update_graphics(&mut self, memory: &mut Memory, cycles: u8) {
         self.set_lcd_status(memory);
-        if self.is_lcd_enabled(&memory) {
+        if self.is_lcd_enabled(memory) {
             self.scanline_counter -= cycles as i32;
         } else {
             return;
         }
         if self.scanline_counter <= 0 {
             let current_line: u8 = {
-                memory.rom[0xff44 as usize] = memory.rom[0xff44 as usize].wrapping_add(1);
+                memory.rom[0xff44_usize] = memory.rom[0xff44_usize].wrapping_add(1);
                 memory.read_from_memory(0xff44)
             };
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
             if current_line == VERTICAL_BLANK_SCAN_LINE {
                 memory.request_interrupt(0);
             } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
-                memory.rom[0xff44 as usize] = 0;
+                memory.rom[0xff44_usize] = 0;
             } else if current_line < VERTICAL_BLANK_SCAN_LINE {
-                self.draw_scanline(&memory);
+                self.draw_scanline(memory);
             }
         }
     }

@@ -2655,7 +2655,7 @@ impl Cpu {
                 let upper: u8 = self.fetch(memory);
                 memory_write_results.append(&mut memory.write_to_memory(bit_logic::compose_bytes(lower, upper), self.a));
             },
-            0xeb | 0xec | 0xed => {
+            0xeb..=0xed => {
                 // Blank Instruction
             },
             0xee => {

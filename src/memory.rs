@@ -73,7 +73,7 @@ impl Memory {
             self.rom[i] = self.cartridge[i];
         }
         match self.cartridge[0x147] {
-            1 | 2 | 3 => { self.mbc1 = true },
+            1..=3 => { self.mbc1 = true },
             5 | 6 => { self.mbc2 = true },
             _ => {},
         }
@@ -86,7 +86,7 @@ impl Memory {
             self.rom[i] = self.cartridge[i];
         }
         match self.cartridge[0x147] {
-            1 | 2 | 3 => { self.mbc1 = true },
+            1..=3 => { self.mbc1 = true },
             5 | 6 => { self.mbc2 = true },
             _ => {},
         }

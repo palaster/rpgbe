@@ -23,13 +23,6 @@ use std::time::Duration;
 
 const TAC: u16 = 0xff07;
 
-pub(crate) enum MemoryWriteResult {
-    None,
-    ResetDividerCounter,
-    SetTimerCounter,
-    ResetChannel(u8, u8),
-}
-
 mod bit_logic;
 mod cpu;
 mod gpu;
@@ -39,6 +32,13 @@ mod timer;
 
 use cpu::Cpu;
 use memory::Memory;
+
+enum MemoryWriteResult {
+    None,
+    ResetDividerCounter,
+    SetTimerCounter,
+    ResetChannel(u8, u8),
+}
 
 #[link(name = "SceAudioIn_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
@@ -245,7 +245,7 @@ fn key_pressed(memory: &mut Memory, key: u8) {
 
     let button: bool = key > 3;
 
-    let key_req: u8 = memory.rom[0xff00 as usize];
+    let key_req: u8 = memory.rom[0xff00_usize];
     let should_request_interrupt: bool = (button && !bit_logic::check_bit(key_req, 5)) || (!button && !bit_logic::check_bit(key_req, 4));
 
     if should_request_interrupt && !previously_unset {

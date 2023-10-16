@@ -149,20 +149,21 @@ impl SoundChannel1 {
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = (8192 + 1) & 8;
-
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(*nr14, 6) && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
                 if self.length == 0 { self.enabled = false; }
             }
         }
 
-        if (self.frame_sequence == 2 || self.frame_sequence == 6) && self.frame_sequence_timer == 8192 && ((nr10 >> 4) & 0b111) != 0 && (nr10 & 0b111) != 0 {
+        let nr10_and_b111 = nr10 & 0b111;
+        let nr10_shift_right_4_and_b111 = (nr10 >> 4) & 0b111;
+        if (self.frame_sequence == 2 || self.frame_sequence == 6) && self.frame_sequence_timer == 8192 && nr10_shift_right_4_and_b111 != 0 && nr10_and_b111 != 0 {
             self.sweep_period -= 1;
-            if self.sweep_period <= 0 {
-                self.sweep_period = (nr10 >> 4) & 0b111;
+            if self.sweep_period == 0 {
+                self.sweep_period = nr10_shift_right_4_and_b111;
                 if self.sweep_period == 0 { self.sweep_period = 8; }
-                if ((nr10 >> 4) & 0b111) != 0 && self.sweep_enabled && (nr10 & 0b111) != 0 {
-                    let sweep_shift = nr10 & 0b111;
+                if nr10_shift_right_4_and_b111 != 0 && self.sweep_enabled && nr10_and_b111 != 0 {
+                    let sweep_shift = nr10_and_b111;
                     let sweep_negate = if bit_logic::check_bit(nr10, 3) { -1 } else { 1 };
                     let new_frequency = self.sweep_shadow + (self.sweep_shadow >> sweep_shift) * sweep_negate;
                     if new_frequency < 2048 && sweep_shift != 0 {
@@ -187,8 +188,7 @@ impl SoundChannel1 {
         }
 
         if self.frequency_timer == 0 {
-            let new_frequency_timer = (((*nr14 as u16) & 0b111) << 8) | (*nr13 as u16);
-            self.frequency_timer = (2048 - new_frequency_timer) * 4;
+            self.frequency_timer = (2048 - ((((*nr14 as u16) & 0b111) << 8) | (*nr13 as u16))) * 4;
             self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
             self.frequency_timer = self.frequency_timer.wrapping_sub(1);
