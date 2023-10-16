@@ -1,4 +1,8 @@
-use super::{bit_logic, Memory, WIDTH, SCREEN_DATA_SIZE};
+use super::bit_logic;
+use super::{WIDTH, HEIGHT};
+use super::Memory;
+
+pub const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
 
 const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
 const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
@@ -11,14 +15,14 @@ enum Color {
     Black,
 }
 
-pub(crate) struct Gpu {
+pub struct Gpu {
     scanline_counter: i32,
     pub(crate) screen_data: [u8; SCREEN_DATA_SIZE as usize],
     scanline_bg: [bool; WIDTH as usize],
 }
 
 impl Gpu {
-    pub(crate) fn new() -> Gpu {
+    pub fn new() -> Gpu {
         Gpu {
             scanline_counter: SCANLINE_COUNTER_START as i32,
             screen_data: [0; SCREEN_DATA_SIZE as usize],
@@ -216,7 +220,7 @@ impl Gpu {
         }
     }
 
-    pub(crate) fn draw_scanline(&mut self, memory: &Memory) {
+    fn draw_scanline(&mut self, memory: &Memory) {
         let control: u8 =  memory.read_from_memory(0xff40);
         if bit_logic::check_bit(control, 0) {
             self.render_tiles(memory);

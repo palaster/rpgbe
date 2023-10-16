@@ -7,7 +7,38 @@ use sdl2::controller::Button;
 use sdl2::event::Event;
 use sdl2::pixels::PixelFormatEnum;
 
-mod gameboy;
+pub const WIDTH: u16 = 160;
+pub const HEIGHT: u16 = 144;
+
+pub const CYCLES_PER_SECOND: u32 = 4_194_304;
+pub const FRAMES_PER_SECOND: f64 = 59.727500569606;
+pub const CYCLES_PER_FRAME: f64 = (CYCLES_PER_SECOND as f64) / FRAMES_PER_SECOND;
+pub const TIME_BETWEEN_FRAMES_IN_NANOSECONDS: f64 = (1_000.0 / FRAMES_PER_SECOND) * 1_000_000.0;
+pub const DURATION_BETWEEN_FRAMES: Duration = Duration::from_nanos(TIME_BETWEEN_FRAMES_IN_NANOSECONDS as u64);
+
+pub const SAMPLE_RATE: u16 = 44_100;
+pub const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
+
+use std::time::Duration;
+
+const TAC: u16 = 0xff07;
+
+pub(crate) enum MemoryWriteResult {
+    None,
+    ResetDividerCounter,
+    SetTimerCounter,
+    ResetChannel(u8, u8),
+}
+
+mod bit_logic;
+mod cpu;
+mod gpu;
+mod memory;
+mod spu;
+mod timer;
+
+use cpu::Cpu;
+use memory::Memory;
 
 #[link(name = "SceAudioIn_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
@@ -37,7 +68,7 @@ fn main() {
             game_controller_subsystem.open(id).ok()
         }).expect("Couldn't open any controllers");
 
-    let window = video_subsystem.window("RPGBE", gameboy::WIDTH.into(), gameboy::HEIGHT.into())
+    let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
         .position_centered()
         .resizable()
         .build()
@@ -50,10 +81,10 @@ fn main() {
 
     let texture_creator = canvas.texture_creator();
 
-    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, gameboy::WIDTH.into(), gameboy::HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
+    let mut texture = texture_creator.create_texture_streaming(PixelFormatEnum::RGB24, WIDTH.into(), HEIGHT.into()).expect("Couldn't create texture from texture_creator.create_texture_streaming");
 
     let desired_spec = AudioSpecDesired {
-        freq: Some(gameboy::SAMPLE_RATE as i32),
+        freq: Some(SAMPLE_RATE as i32),
         channels: Some(2),
         samples: None,
     };
@@ -63,8 +94,13 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
-    let mut gameboy = gameboy::Gameboy::new();
-    gameboy.memory.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
+    let mut cpu = cpu::Cpu::new();
+    let mut gpu = gpu::Gpu::new();
+    let mut memory = memory::Memory::new();
+    let mut spu = spu::Spu::new();
+    let mut timer = timer::Timer::new();
+    memory.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
+
     //gameboy.memory.load_cartridge_from_path(PathBuf::from(rom_path));
 
     'running: loop {
@@ -86,7 +122,7 @@ fn main() {
                         _ => -1,
                     };
                     if key_code >= 0 {
-                        gameboy.key_pressed(key_code as u8);
+                        key_pressed(&mut memory, key_code as u8);
                     }
                 },
                 Event::ControllerButtonUp { button, .. } => {
@@ -102,7 +138,7 @@ fn main() {
                         _ => -1,
                     };
                     if key_code >= 0 {
-                        gameboy.key_released(key_code as u8);
+                        key_released(&mut memory, key_code as u8);
                     }
                 },
                 _ => (),
@@ -111,22 +147,150 @@ fn main() {
 
         let start = Instant::now();
         let mut cycles_this_frame: f64 = 0.0;
-        while cycles_this_frame <= gameboy::CYCLES_PER_FRAME {
-            cycles_this_frame += gameboy.update() as f64;
+        while cycles_this_frame <= CYCLES_PER_FRAME {
+            let mut cycles: u8 = 4;
+            if !cpu.halted {
+                let (new_cycles, memory_write_results) = cpu.update(&mut memory);
+                cycles = new_cycles.wrapping_mul(4);
+                for memory_result in memory_write_results {
+                    match memory_result {
+                        MemoryWriteResult::ResetDividerCounter => {
+                            timer.divider_counter = 0
+                        },
+                        MemoryWriteResult::SetTimerCounter => {
+                            timer.set_clock_freq(&memory)
+                        },
+                        MemoryWriteResult::ResetChannel(id, length) => {
+                            match id {
+                                0 => { spu.sound_channel_1.reset(&memory, length) },
+                                1 => { spu.sound_channel_2.reset(&memory, length) },
+                                2 => { spu.sound_channel_3.reset(&memory, length) },
+                                3 => { spu.sound_channel_4.reset(&memory, length) },
+                                _ => { },
+                            }
+                        },
+                        _ => { },
+                    }
+                }
+            }
+
+            for memory_result in timer.update_timer(&mut memory, cycles) {
+                match memory_result {
+                    MemoryWriteResult::ResetDividerCounter => {
+                        timer.divider_counter = 0
+                    },
+                    MemoryWriteResult::SetTimerCounter => {
+                        timer.set_clock_freq(&memory)
+                    },
+                    MemoryWriteResult::ResetChannel(id, length) => {
+                        match id {
+                            0 => { spu.sound_channel_1.reset(&memory, length) },
+                            1 => { spu.sound_channel_2.reset(&memory, length) },
+                            2 => { spu.sound_channel_3.reset(&memory, length) },
+                            3 => { spu.sound_channel_4.reset(&memory, length) },
+                            _ => { },
+                        }
+                    },
+                    _ => { },
+                }
+            }
+            gpu.update_graphics(&mut memory, cycles);
+            spu.update_audio(&memory, cycles);
+
+            let (memory_write_results, cycles_taken) = do_interrupts(&mut cpu, &mut memory);
+            for memory_result in memory_write_results {
+                match memory_result {
+                    MemoryWriteResult::ResetDividerCounter => {
+                        timer.divider_counter = 0
+                    },
+                    MemoryWriteResult::SetTimerCounter => {
+                        timer.set_clock_freq(&memory)
+                    },
+                    MemoryWriteResult::ResetChannel(id, length) => {
+                        match id {
+                            0 => { spu.sound_channel_1.reset(&memory, length) },
+                            1 => { spu.sound_channel_2.reset(&memory, length) },
+                            2 => { spu.sound_channel_3.reset(&memory, length) },
+                            3 => { spu.sound_channel_4.reset(&memory, length) },
+                            _ => { },
+                        }
+                    },
+                    _ => { },
+                }
+            }
+            cycles += cycles_taken;
+            cycles_this_frame += cycles as f64;
         }
 
-        texture.update(None, &gameboy.gpu.screen_data, gameboy::WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
+        texture.update(None, &gpu.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
 
-        let _ = device.queue_audio(&gameboy.spu.audio_data);
-        gameboy.spu.audio_data.clear();
+        let _ = device.queue_audio(&spu.audio_data);
+        spu.audio_data.clear();
 
         let elapsed_time = start.elapsed();
-        if elapsed_time <= gameboy::DURATION_BETWEEN_FRAMES {
-            let time_remaining = gameboy::DURATION_BETWEEN_FRAMES - elapsed_time;
+        if elapsed_time <= DURATION_BETWEEN_FRAMES {
+            let time_remaining = DURATION_BETWEEN_FRAMES - elapsed_time;
             thread::sleep(time_remaining);
         }
     }
+}
+
+fn key_pressed(memory: &mut Memory, key: u8) {
+    let previously_unset: bool = !bit_logic::check_bit(memory.gamepad_state, key);
+
+    memory.gamepad_state = bit_logic::reset_bit(memory.gamepad_state, key);
+
+    let button: bool = key > 3;
+
+    let key_req: u8 = memory.rom[0xff00 as usize];
+    let should_request_interrupt: bool = (button && !bit_logic::check_bit(key_req, 5)) || (!button && !bit_logic::check_bit(key_req, 4));
+
+    if should_request_interrupt && !previously_unset {
+        memory.request_interrupt(4);
+    }
+}
+
+fn key_released(memory: &mut Memory, key: u8) {
+    memory.gamepad_state = bit_logic::set_bit(memory.gamepad_state, key);
+}
+
+fn service_interrupt(cpu: &mut Cpu, memory: &mut Memory, interrupt_id: u8) -> Vec<MemoryWriteResult> {
+    cpu.interrupts_enabled = false;
+    //self.write_to_address(0xff0f, bit_logic::reset_bit(memory.read_from_memory(0xff0f), interrupt_id));
+
+    let pc: u16 = cpu.pc;
+    cpu.push(memory, (pc >> 8) as u8);
+    cpu.push(memory, pc as u8);
+
+    match interrupt_id {
+        0 => { cpu.pc = 0x40 },
+        1 => { cpu.pc = 0x48 },
+        2 => { cpu.pc = 0x50 },
+        3 => { cpu.pc = 0x58 },
+        4 => { cpu.pc = 0x60 },
+        _ => {},
+    }
+    memory.write_to_memory(0xff0f, bit_logic::reset_bit(memory.read_from_memory(0xff0f), interrupt_id))
+}
+
+fn do_interrupts(cpu: &mut Cpu, memory: &mut Memory) -> (Vec<MemoryWriteResult>, u8) {
+    let result = Vec::new();
+    let (req, enabled): (u8, u8) = (memory.read_from_memory(0xff0f), memory.read_from_memory(0xffff));
+    let potential_for_interrupts: u8 = req & enabled;
+    if potential_for_interrupts == 0 {
+        return (result, 0);
+    }
+    if cpu.interrupts_enabled {
+        cpu.halted = false;
+        for i in 0..5 {
+            if bit_logic::check_bit(req, i) && bit_logic::check_bit(enabled, i) {
+                return (service_interrupt(cpu, memory, i), 20);
+            }
+        }
+    }
+    cpu.halted = false;
+    (result, 0)
 }

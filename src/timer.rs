@@ -8,13 +8,13 @@ const FREQUENCY_262144: u16 = 16; // CYCLES_PER_SECOND / 262144
 const FREQUENCY_65536: u16 = 64; // CYCLES_PER_SECOND / 65536
 const FREQUENCY_16384: u16 = 256; // CYCLES_PER_SECOND / 16384
 
-pub(crate) struct Timer {
+pub struct Timer {
     pub(crate) timer_counter: i32,
     pub(crate) divider_counter: i32,
 }
 
 impl Timer {
-    pub(crate) fn new() -> Timer {
+    pub fn new() -> Timer {
         Timer {
             timer_counter: 0,
             divider_counter: 0,

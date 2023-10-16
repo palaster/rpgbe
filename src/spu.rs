@@ -9,13 +9,7 @@ const WAVE_FORM: [[u8; 8]; 4] = [
 
 const SOUND_CHANNEL_4_DIVISOR: [u8; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
-pub(crate) trait SoundChannel {
-    fn reset(&mut self, memory: &Memory, length: u8);
-    fn update(&mut self, memory: &mut Memory);
-    fn get_amplitude(&mut self, memory: &Memory) -> f32;
-}
-
-pub(crate) struct Spu {
+pub struct Spu {
     pub(crate) audio_data: Vec<f32>,
     pub(crate) audio_fill_timer: u8, // CYCLES_PER_SECOND / SAMPLE_RATE (44100)
     pub(crate) sound_channel_1: SoundChannel1,
@@ -25,7 +19,7 @@ pub(crate) struct Spu {
 }
 
 impl Spu {
-    pub(crate) fn new() -> Spu {
+    pub fn new() -> Spu {
         Spu {
             audio_data: Vec::new(),
             audio_fill_timer: TIME_BETWEEN_AUDIO_SAMPLING,
@@ -36,9 +30,11 @@ impl Spu {
         }
     }
 
-    pub(crate) fn update_audio(&mut self, memory: &mut Memory, cycles: u8) {
+    pub(crate) fn update_audio(&mut self, memory: &Memory, cycles: u8) -> Option<(u8, u8)> {
+        let mut nr13 = memory.read_from_memory(0xff13);
+        let mut nr14 = memory.read_from_memory(0xff14);
         for _ in 0..cycles {
-            self.sound_channel_1.update(memory);
+            self.sound_channel_1.update(memory, &mut nr13, &mut nr14);
             self.sound_channel_2.update(memory);
             self.sound_channel_3.update(memory);
             self.sound_channel_4.update(memory);
@@ -54,10 +50,10 @@ impl Spu {
                         nr50 & 0x7
                     )
                 };
-                let channel_1 = self.sound_channel_1.get_amplitude(memory);
+                let channel_1 = self.sound_channel_1.get_amplitude();
                 let channel_2 = self.sound_channel_2.get_amplitude(memory);
                 let channel_3 = self.sound_channel_3.get_amplitude(memory);
-                let channel_4 = self.sound_channel_4.get_amplitude(memory);
+                let channel_4 = self.sound_channel_4.get_amplitude();
                 let nr51 = memory.read_from_memory(0xff25);
                 if nr51 != 0 {
                     let mut left_results = 0.0;
@@ -80,6 +76,7 @@ impl Spu {
                 self.audio_fill_timer = self.audio_fill_timer.saturating_sub(1);
             }
         }
+        Some((nr13, nr14))
     }
 }
 
@@ -117,10 +114,8 @@ impl SoundChannel1 {
             sweep_shadow: 0,
         }
     }
-}
 
-impl SoundChannel for SoundChannel1 {
-    fn reset(&mut self, memory: &Memory, length: u8) {
+    pub(crate) fn reset(&mut self, memory: &Memory, length: u8) {
         let nr10: u8 = memory.read_from_memory(0xff10);
         let nr12: u8 = memory.read_from_memory(0xff12);
         let nr13: u8 = memory.read_from_memory(0xff13);
@@ -146,18 +141,16 @@ impl SoundChannel for SoundChannel1 {
         if nr12 >> 3 == 0 { self.enabled = false; }
     }
 
-    fn update(&mut self, memory: &mut Memory) {
+    fn update(&mut self, memory: &Memory, nr13: &mut u8, nr14: &mut u8) {
         let nr10 = memory.read_from_memory(0xff10);
         let duty = memory.read_from_memory(0xff11) >> 6;
         let nr12 = memory.read_from_memory(0xff12);
-        let nr13 = memory.read_from_memory(0xff13);
-        let nr14 = memory.read_from_memory(0xff14);
 
         self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = (8192 + 1) & 8;
 
-            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr14, 6) && self.length != 0 {
+            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(*nr14, 6) && self.length != 0 {
                 self.length = self.length.wrapping_sub(1);
                 if self.length == 0 { self.enabled = false; }
             }
@@ -174,8 +167,8 @@ impl SoundChannel for SoundChannel1 {
                     let new_frequency = self.sweep_shadow + (self.sweep_shadow >> sweep_shift) * sweep_negate;
                     if new_frequency < 2048 && sweep_shift != 0 {
                         self.sweep_shadow = new_frequency;
-                        memory.write_to_memory(0xff13, (self.sweep_shadow & 0xff) as u8);
-                        memory.write_to_memory(0xff14, ((self.sweep_shadow >> 8) & 0b111) as u8);
+                        *nr13 = (self.sweep_shadow & 0xff) as u8;
+                        *nr14 = ((self.sweep_shadow >> 8) & 0b111) as u8;
                         if self.sweep_shadow + (self.sweep_shadow >> sweep_shift) * sweep_negate > 2047 {
                             self.enabled = false;
                             self.sweep_enabled = false;
@@ -194,7 +187,7 @@ impl SoundChannel for SoundChannel1 {
         }
 
         if self.frequency_timer == 0 {
-            let new_frequency_timer = (((nr14 as u16) & 0b111) << 8) | (nr13 as u16);
+            let new_frequency_timer = (((*nr14 as u16) & 0b111) << 8) | (*nr13 as u16);
             self.frequency_timer = (2048 - new_frequency_timer) * 4;
             self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
@@ -222,7 +215,7 @@ impl SoundChannel for SoundChannel1 {
         }
     }
 
-    fn get_amplitude(&mut self, _memory: &Memory) -> f32 {
+    fn get_amplitude(&mut self) -> f32 {
         if self.enabled {
             self.frequency as f32 / 100.0
         } else {
@@ -257,10 +250,8 @@ impl SoundChannel2 {
             length: 0,
         }
     }
-}
 
-impl SoundChannel for SoundChannel2 {
-    fn reset(&mut self, memory: &Memory, length: u8) {
+    pub(crate) fn reset(&mut self, memory: &Memory, length: u8) {
         let nr22: u8 = memory.read_from_memory(0xff17);
         if self.length == 0 { self.length = 64 - length; }
         self.enabled = true;
@@ -270,7 +261,7 @@ impl SoundChannel for SoundChannel2 {
         if nr22 >> 3 == 0 { self.enabled = false; }
     }
 
-    fn update(&mut self, memory: &mut Memory) {
+    fn update(&mut self, memory: &Memory) {
         let nr22 = memory.read_from_memory(0xff17);
         let nr23 = memory.read_from_memory(0xff18);
         let nr24 = memory.read_from_memory(0xff19);
@@ -341,10 +332,8 @@ impl SoundChannel3 {
             length: 0,
         }
     }
-}
 
-impl SoundChannel for SoundChannel3 {
-    fn reset(&mut self, memory: &Memory, length: u8) {
+    pub(crate) fn reset(&mut self, memory: &Memory, length: u8) {
         let nr33 = memory.read_from_memory(0xff1d);
         let nr34 = memory.read_from_memory(0xff1e);
         let new_frequency = ((nr34 as u16) & 0b111) << 8 | (nr33 as u16);
@@ -355,7 +344,7 @@ impl SoundChannel for SoundChannel3 {
         if memory.read_from_memory(0xff1a) >> 6 == 0 { self.enabled = false; }
     }
 
-    fn update(&mut self, memory: &mut Memory) {
+    fn update(&mut self, memory: &Memory) {
         let nr33 = memory.read_from_memory(0xff1d);
         let nr34 = memory.read_from_memory(0xff1e);
         if self.frequency_timer == 0 {
@@ -429,10 +418,8 @@ impl SoundChannel4 {
             lfsr: 0,
         }
     }
-}
 
-impl SoundChannel for SoundChannel4 {
-    fn reset(&mut self, memory: &Memory, length: u8) {
+    pub(crate) fn reset(&mut self, memory: &Memory, length: u8) {
         let nr42 = memory.read_from_memory(0xff21);
         let nr43 = memory.read_from_memory(0xff22);
         if self.length == 0 { self.length = 64 - length; }
@@ -445,7 +432,7 @@ impl SoundChannel for SoundChannel4 {
         if nr42 >> 3 == 0 { self.enabled = false; }
     }
 
-    fn update(&mut self, memory: &mut Memory) {
+    fn update(&mut self, memory: &Memory) {
         let nr42 = memory.read_from_memory(0xff21);
         let nr43 = memory.read_from_memory(0xff22);
         let nr44 = memory.read_from_memory(0xff23);
@@ -488,7 +475,7 @@ impl SoundChannel for SoundChannel4 {
         }
     }
 
-    fn get_amplitude(&mut self, _memory: &Memory) -> f32 {
+    fn get_amplitude(&mut self) -> f32 {
         if self.enabled {
             if (self.lfsr & 1) != 0 {
                 0.0

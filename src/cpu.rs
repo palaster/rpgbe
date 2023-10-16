@@ -60,7 +60,7 @@ const CB_INSTRUCTION_TIMINGS: [u8; 256] = [
 ];
 
 #[derive(Debug)]
-pub(crate) struct Cpu {
+pub struct Cpu {
     a: u8,
     b: u8,
     c: u8,
@@ -81,7 +81,7 @@ pub(crate) struct Cpu {
 }
 
 impl Cpu {
-    pub(crate) fn new() -> Cpu {
+    pub fn new() -> Cpu {
         Cpu {
             a: 0x01,
             b: 0x00,
@@ -101,20 +101,6 @@ impl Cpu {
             pending_interrupt_enable: false,
             one_instruction_passed: false,
         }
-    }
-
-    pub(crate) fn debug(&self) -> String {
-        format!("A: {:#02x}\nF: {:#02x}\nB: {:#02x}\nC: {:#02x}\nD: {:#02x}\nE: {:#02x}\nH: {:#02x}\nL: {:#02x}\nSP: {:#04x}\nPC: {:#04x}\n",
-        self.a,
-        self.get_f(),
-        self.b,
-        self.c,
-        self.d,
-        self.e,
-        self.h,
-        self.l,
-        self.sp,
-        self.pc)
     }
 
     fn get_f(&self) -> u8 {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{bit_logic, MemoryWriteResult, TAC};
 
-pub(crate) struct Memory {
+pub struct Memory {
     pub(crate) gamepad_state: u8,
     rom_banking: bool,
     enable_ram: bool,
@@ -18,7 +18,7 @@ pub(crate) struct Memory {
 }
 
 impl Memory {
-    pub(crate) fn new() -> Memory {
+    pub fn new() -> Memory {
         let mut rom_vec = vec![0; 0x10000];
 
         rom_vec[0xff05] = 0x00;
