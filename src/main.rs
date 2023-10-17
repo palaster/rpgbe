@@ -59,23 +59,14 @@ fn main() {
     let audio_subsystem = sdl_context.audio().expect("Couldn't init sdl audio");
     let game_controller_subsystem = sdl_context.game_controller().expect("Couldn't init sdl game_controller");
 
-    let number_of_joystics = game_controller_subsystem.num_joysticks().expect("Couldn't find any joysticks");
-    let _controller = (0..number_of_joystics)
-        .find_map(|id| {
-            if !game_controller_subsystem.is_game_controller(id) {
-                return None;
-            }
-            game_controller_subsystem.open(id).ok()
-        }).expect("Couldn't open any controllers");
-
     let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
-        .position_centered()
-        .resizable()
+        .fullscreen_desktop()
+        .borderless()
         .build()
         .expect("Couldn't create window from video");
 
     let mut canvas = window.into_canvas()
-        .software()
+        .accelerated()
         .build()
         .expect("Couldn't create canvas from window");
 
@@ -91,6 +82,15 @@ fn main() {
 
     let device: AudioQueue<f32> = audio_subsystem.open_queue(None, &desired_spec).expect("Couldn't get a desired audio device");
     device.resume();
+
+    let number_of_joystics = game_controller_subsystem.num_joysticks().expect("Couldn't find any joysticks");
+    let _controller = (0..number_of_joystics)
+        .find_map(|id| {
+            if !game_controller_subsystem.is_game_controller(id) {
+                return None;
+            }
+            game_controller_subsystem.open(id).ok()
+        }).expect("Couldn't open any controllers");
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
