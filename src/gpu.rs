@@ -170,7 +170,7 @@ impl Gpu {
                     let x_pix: u32 = 7_u32.wrapping_sub(tile_pixel as u32);
 
                     let pixel: u32 = (x_pos as u32).wrapping_add(x_pix);
-                    if !(0..=143).contains(&scanline) || (pixel > 159) {
+                    if pixel > 159 || scanline <= 0 || scanline > 143  {
                         continue;
                     }
 

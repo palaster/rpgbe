@@ -205,7 +205,7 @@ impl SoundChannel1 {
             if self.envelope_sweeps == 0 {
                 self.envelope_sweeps = nr12 & 0b111;
                 let new_amplitude = self.amplitude + if bit_logic::check_bit(nr12, 3) { 1 } else { -1 };
-                if (0..=15).contains(&new_amplitude) {
+                if new_amplitude > 0 && new_amplitude <= 15 {
                     self.amplitude = new_amplitude;
                     self.frequency = self.amplitude;
                 } else {
@@ -288,7 +288,7 @@ impl SoundChannel2 {
                 if self.envelope_sweeps == 0 {
                     self.envelope_sweeps = nr22 & 0b111;
                     let new_amplitude = self.amplitude + if bit_logic::check_bit(nr22, 3) { 1 } else { -1 };
-                    if (0..=15).contains(&new_amplitude) {
+                    if new_amplitude > 0 && new_amplitude <= 15 {
                         self.amplitude = new_amplitude;
                     } else {
                         self.envelope_enabled = false;
@@ -376,10 +376,10 @@ impl SoundChannel3 {
                 wave >> 4
             };
             let volume = (memory.read_from_memory(0xff1c) >> 5) & 0b11;
-            wave = if volume != 0 {
-                wave >> (volume - 1)
+            wave >>= if volume != 0 {
+                volume - 1
             } else {
-                wave >> 4
+                4
             };
             if memory.read_from_memory(0xff1a) >> 7 != 0 {
                 (wave as f32) / 100.0
@@ -453,7 +453,7 @@ impl SoundChannel4 {
                     self.envelope_sweeps = nr42 & 0b111;
                     if self.envelope_sweeps != 0 {
                         let new_amplitude = self.amplitude + if bit_logic::check_bit(nr42, 3) { 1 } else { -1 };
-                        if (0..=15).contains(&new_amplitude) {
+                        if new_amplitude > 0 && new_amplitude <= 15 {
                             self.amplitude = new_amplitude;
                         } else {
                             self.envelope_enabled = false;

@@ -195,7 +195,30 @@ fn main() {
                 }
             }
             gpu.update_graphics(&mut memory, cycles);
-            spu.update_audio(&memory, cycles);
+            if let Some((new_nr13, new_nr14)) = spu.update_audio(&memory, cycles) {
+                let mut memory_write_results = memory.write_to_memory(0xff13, new_nr13);
+                memory_write_results.append(&mut memory.write_to_memory(0xff14, new_nr14));
+                for memory_result in memory_write_results {
+                    match memory_result {
+                        MemoryWriteResult::ResetDividerCounter => {
+                            timer.divider_counter = 0
+                        },
+                        MemoryWriteResult::SetTimerCounter => {
+                            timer.set_clock_freq(&memory)
+                        },
+                        MemoryWriteResult::ResetChannel(id, length) => {
+                            match id {
+                                0 => { spu.sound_channel_1.reset(&memory, length) },
+                                1 => { spu.sound_channel_2.reset(&memory, length) },
+                                2 => { spu.sound_channel_3.reset(&memory, length) },
+                                3 => { spu.sound_channel_4.reset(&memory, length) },
+                                _ => { },
+                            }
+                        },
+                        _ => { },
+                    }
+                }
+            }
 
             let (memory_write_results, cycles_taken) = do_interrupts(&mut cpu, &mut memory);
             for memory_result in memory_write_results {
