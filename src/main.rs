@@ -103,6 +103,9 @@ fn main() {
 
     //gameboy.memory.load_cartridge_from_path(PathBuf::from(rom_path));
 
+    let mut start: Instant;
+    let mut cycles_this_frame: f64;
+    let mut cycles: u8;
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -145,10 +148,10 @@ fn main() {
             }
         }
 
-        let start = Instant::now();
-        let mut cycles_this_frame: f64 = 0.0;
+        start = Instant::now();
+        cycles_this_frame = 0.0;
         while cycles_this_frame <= CYCLES_PER_FRAME {
-            let mut cycles: u8 = 4;
+            cycles = 4;
             if !cpu.halted {
                 let (new_cycles, memory_write_results) = cpu.update(&mut memory);
                 cycles = new_cycles.wrapping_mul(4);
@@ -241,8 +244,7 @@ fn main() {
                     _ => { },
                 }
             }
-            cycles += cycles_taken;
-            cycles_this_frame += cycles as f64;
+            cycles_this_frame += (cycles + cycles_taken) as f64;
         }
 
         texture.update(None, &gpu.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
@@ -255,8 +257,7 @@ fn main() {
 
         let elapsed_time = start.elapsed();
         if elapsed_time <= DURATION_BETWEEN_FRAMES {
-            let time_remaining = DURATION_BETWEEN_FRAMES - elapsed_time;
-            thread::sleep(time_remaining);
+            thread::sleep(DURATION_BETWEEN_FRAMES - elapsed_time);
         }
     }
 }

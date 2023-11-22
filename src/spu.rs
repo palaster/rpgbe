@@ -33,6 +33,15 @@ impl Spu {
     pub(crate) fn update_audio(&mut self, memory: &Memory, cycles: u8) -> Option<(u8, u8)> {
         let mut nr13 = memory.read_from_memory(0xff13);
         let mut nr14 = memory.read_from_memory(0xff14);
+        let mut nr50: u8;
+        let mut channel_1: f32;
+        let mut channel_2: f32;
+        let mut channel_3: f32;
+        let mut channel_4: f32;
+        let mut nr51: u8;
+        let mut left_results: f32;
+        let mut right_results: f32;
+
         for _ in 0..cycles {
             self.sound_channel_1.update(memory, &mut nr13, &mut nr14);
             self.sound_channel_2.update(memory);
@@ -42,7 +51,7 @@ impl Spu {
             if self.audio_fill_timer == 0 {
                 self.audio_fill_timer = TIME_BETWEEN_AUDIO_SAMPLING;
                 let (_enable_left_vin, left_volume, _enable_right_vin, right_volume) = {
-                    let nr50 = memory.read_from_memory(0xff24);
+                    nr50 = memory.read_from_memory(0xff24);
                     (
                         nr50 & 0x80 != 0,
                         (nr50 & 0x70) >> 4,
@@ -50,19 +59,19 @@ impl Spu {
                         nr50 & 0x7
                     )
                 };
-                let channel_1 = self.sound_channel_1.get_amplitude();
-                let channel_2 = self.sound_channel_2.get_amplitude(memory);
-                let channel_3 = self.sound_channel_3.get_amplitude(memory);
-                let channel_4 = self.sound_channel_4.get_amplitude();
-                let nr51 = memory.read_from_memory(0xff25);
+                channel_1 = self.sound_channel_1.get_amplitude();
+                channel_2 = self.sound_channel_2.get_amplitude(memory);
+                channel_3 = self.sound_channel_3.get_amplitude(memory);
+                channel_4 = self.sound_channel_4.get_amplitude();
+                nr51 = memory.read_from_memory(0xff25);
                 if nr51 != 0 {
-                    let mut left_results = 0.0;
+                    left_results = 0.0;
                     left_results += if bit_logic::check_bit(nr51, 4) { channel_1 * (left_volume as f32 / 7.0) } else { 0.0 };
                     left_results += if bit_logic::check_bit(nr51, 5) { channel_2 * (left_volume as f32 / 7.0) } else { 0.0 };
                     left_results += if bit_logic::check_bit(nr51, 6) { channel_3 * (left_volume as f32 / 7.0) } else { 0.0 };
                     left_results += if bit_logic::check_bit(nr51, 7) { channel_4 * (left_volume as f32 / 7.0) } else { 0.0 };
                     self.audio_data.push(left_results);
-                    let mut right_results = 0.0;
+                    right_results = 0.0;
                     right_results += if bit_logic::check_bit(nr51, 0) { channel_1 * (right_volume as f32 / 7.0) } else { 0.0 };
                     right_results += if bit_logic::check_bit(nr51, 1) { channel_2 * (right_volume as f32 / 7.0) } else { 0.0 };
                     right_results += if bit_logic::check_bit(nr51, 2) { channel_3 * (right_volume as f32 / 7.0) } else { 0.0 };
