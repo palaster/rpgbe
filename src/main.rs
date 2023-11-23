@@ -154,7 +154,7 @@ fn main() {
             cycles = 4;
             if !cpu.halted {
                 let (new_cycles, memory_write_results) = cpu.update(&mut memory);
-                cycles = new_cycles.wrapping_mul(4);
+                cycles = new_cycles * 4;
                 for memory_result in memory_write_results {
                     match memory_result {
                         MemoryWriteResult::ResetDividerCounter => {

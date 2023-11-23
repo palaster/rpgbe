@@ -66,23 +66,25 @@ impl Spu {
                 nr51 = memory.read_from_memory(0xff25);
                 if nr51 != 0 {
                     left_results = 0.0;
-                    left_results += if bit_logic::check_bit(nr51, 4) { channel_1 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 5) { channel_2 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 6) { channel_3 * (left_volume as f32 / 7.0) } else { 0.0 };
-                    left_results += if bit_logic::check_bit(nr51, 7) { channel_4 * (left_volume as f32 / 7.0) } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 4) { channel_1 } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 5) { channel_2 } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 6) { channel_3 } else { 0.0 };
+                    left_results += if bit_logic::check_bit(nr51, 7) { channel_4 } else { 0.0 };
+                    left_results *= left_volume as f32 / 7.0;
                     self.audio_data.push(left_results);
                     right_results = 0.0;
-                    right_results += if bit_logic::check_bit(nr51, 0) { channel_1 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 1) { channel_2 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 2) { channel_3 * (right_volume as f32 / 7.0) } else { 0.0 };
-                    right_results += if bit_logic::check_bit(nr51, 3) { channel_4 * (right_volume as f32 / 7.0) } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 0) { channel_1 } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 1) { channel_2 } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 2) { channel_3 } else { 0.0 };
+                    right_results += if bit_logic::check_bit(nr51, 3) { channel_4 } else { 0.0 };
+                    right_results *= right_volume as f32 / 7.0;
                     self.audio_data.push(right_results);
                 } else {
                     self.audio_data.push(0.0);
                     self.audio_data.push(0.0);
                 }
             } else {
-                self.audio_fill_timer = self.audio_fill_timer.saturating_sub(1);
+                self.audio_fill_timer -= 1;
             }
         }
         Some((nr13, nr14))
@@ -155,11 +157,11 @@ impl SoundChannel1 {
         let duty = memory.read_from_memory(0xff11) >> 6;
         let nr12 = memory.read_from_memory(0xff12);
 
-        self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
+        self.frame_sequence_timer -= 1;
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = (8192 + 1) & 8;
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(*nr14, 6) && self.length != 0 {
-                self.length = self.length.wrapping_sub(1);
+                self.length -= 1;
                 if self.length == 0 { self.enabled = false; }
             }
         }
@@ -200,7 +202,7 @@ impl SoundChannel1 {
             self.frequency_timer = (2048 - ((((*nr14 as u16) & 0b111) << 8) | (*nr13 as u16))) * 4;
             self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
-            self.frequency_timer = self.frequency_timer.wrapping_sub(1);
+            self.frequency_timer -= 1;
         }
 
         self.frequency = if WAVE_FORM[duty as usize][self.wave_duty_position as usize] == 1 {
@@ -210,7 +212,7 @@ impl SoundChannel1 {
         };
         
         if self.frame_sequence == 7 && self.frame_sequence_timer == 8192 && self.envelope_enabled && (nr12 & 0b111) != 0 {
-            self.envelope_sweeps = self.envelope_sweeps.wrapping_sub(1);
+            self.envelope_sweeps -= 1;
             if self.envelope_sweeps == 0 {
                 self.envelope_sweeps = nr12 & 0b111;
                 let new_amplitude = self.amplitude + if bit_logic::check_bit(nr12, 3) { 1 } else { -1 };
@@ -279,21 +281,21 @@ impl SoundChannel2 {
             self.frequency_timer = (2048 - new_frequency_timer) * 4;
             self.wave_duty_position = (self.wave_duty_position + 1) % 8;
         } else {
-            self.frequency_timer = self.frequency_timer.wrapping_sub(1);
+            self.frequency_timer -= 1;
         }
 
-        self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
+        self.frame_sequence_timer -= 1;
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
             self.frame_sequence = (self.frame_sequence + 1) & 8;
 
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr24, 6) && self.length != 0 {
-                self.length = self.length.wrapping_sub(1);
+                self.length -= 1;
                 if self.length == 0 { self.enabled = false; }
             }
 
             if self.frame_sequence == 7 && self.envelope_enabled && (nr22 & 0b111) != 0 {
-                self.envelope_sweeps = self.envelope_sweeps.wrapping_sub(1);
+                self.envelope_sweeps -= 1;
                 if self.envelope_sweeps == 0 {
                     self.envelope_sweeps = nr22 & 0b111;
                     let new_amplitude = self.amplitude + if bit_logic::check_bit(nr22, 3) { 1 } else { -1 };
@@ -361,16 +363,16 @@ impl SoundChannel3 {
             self.frequency_timer = (2048 - new_frequency_timer) * 2;
             self.wave_index = (self.wave_index + 1) % 32;
         } else {
-            self.frequency_timer = self.frequency_timer.wrapping_sub(1);
+            self.frequency_timer -= 1;
         }
 
-        self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
+        self.frame_sequence_timer -= 1;
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
             self.frame_sequence = (self.frame_sequence + 1) & 8;
 
             if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr34, 6)  && self.length != 0 {
-                self.length = self.length.wrapping_sub(1);
+                self.length -= 1;
                 if self.length == 0 { self.enabled = false; }
             }
         }
@@ -446,18 +448,18 @@ impl SoundChannel4 {
         let nr43 = memory.read_from_memory(0xff22);
         let nr44 = memory.read_from_memory(0xff23);
 
-        self.frame_sequence_timer = self.frame_sequence_timer.wrapping_sub(1);
+        self.frame_sequence_timer -= 1;
         if self.frame_sequence_timer == 0 {
             self.frame_sequence_timer = 8192;
             self.frame_sequence = (self.frame_sequence + 1) & 8;
 
-            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr44, 6)  && self.length != 0 {
-                self.length = self.length.wrapping_sub(1);
+            if self.frame_sequence % 2 == 0 && bit_logic::check_bit(nr44, 6) && self.length != 0 {
+                self.length -= 1;
                 if self.length == 0 { self.enabled = false; }
             }
 
             if self.frame_sequence == 7 && self.envelope_enabled && (nr42 & 0b111) != 0 {
-                self.envelope_sweeps = self.envelope_sweeps.wrapping_sub(1);
+                self.envelope_sweeps -= 1;
                 if self.envelope_sweeps == 0 {
                     self.envelope_sweeps = nr42 & 0b111;
                     if self.envelope_sweeps != 0 {
@@ -480,7 +482,7 @@ impl SoundChannel4 {
                 self.lfsr = (self.lfsr | (xor_rs << 6)) & 0x7f;
             }
         } else {
-            self.frequency_timer = self.frequency_timer.wrapping_sub(1);
+            self.frequency_timer -= 1;
         }
     }
 

@@ -45,7 +45,7 @@ impl Timer {
         self.divider_counter += cycles as i32;
         if self.divider_counter >= 255 {
             self.divider_counter = 0;
-            memory.rom[0xff04_usize] = memory.rom[0xff04_usize].wrapping_add(1);
+            memory.rom[0xff04_usize] += 1;
         }
 
         if self.is_clock_enabled(memory) {
@@ -57,7 +57,7 @@ impl Timer {
                     result = memory.write_to_memory(TIMA, tma);
                     memory.request_interrupt(2);
                 } else {
-                    result = memory.write_to_memory(TIMA, tima.wrapping_add(1));
+                    result = memory.write_to_memory(TIMA, tima + 1);
                 }
             }
         }

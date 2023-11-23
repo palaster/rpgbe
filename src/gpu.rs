@@ -45,7 +45,7 @@ impl Gpu {
 
     fn render_tiles(&mut self, memory: &Memory) {
         let mut unsig: bool = true;
-        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (memory.read_from_memory(0xff40), memory.read_from_memory(0xff42), memory.read_from_memory(0xff43), memory.read_from_memory(0xff4a), memory.read_from_memory(0xff4b).wrapping_sub(7));
+        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (memory.read_from_memory(0xff40), memory.read_from_memory(0xff42), memory.read_from_memory(0xff43), memory.read_from_memory(0xff4a), memory.read_from_memory(0xff4b) - 7);
 
         let mut using_window: bool = false;
 
@@ -74,28 +74,26 @@ impl Gpu {
         };
 
         let y_pos: u8 = if !using_window {
-            scroll_y.wrapping_add(ff44)
+            scroll_y + ff44
         } else {
-            ff44.wrapping_sub(window_y)
+            ff44 - window_y
         };
 
-        let tile_row: u16 = (y_pos as u16).wrapping_div(8).wrapping_mul(32);
+        let tile_row: u16 = (y_pos as u16) / 8 * 32;
         let mut x_pos: u8;
         let mut tile_address: u16;
         let mut tile_num: i16;
         let mut tile_location: u16;
         let mut color_bit: i32;
         let mut color_num: i32;
-        let line: u8 = y_pos.wrapping_rem(8) * 2;
-        let mut y: u32;
-        let mut x: u32;
+        let line: u8 = (y_pos % 8) * 2;
         let mut xy: u32;
         for pixel in 0..WIDTH {
-            x_pos = pixel.wrapping_add(scroll_x as u16) as u8;
+            x_pos = (pixel + (scroll_x as u16)) as u8;
             if using_window && pixel >= (window_x as u16) {
-                x_pos = pixel.wrapping_sub(window_x as u16) as u8;
+                x_pos = (pixel - (window_x as u16)) as u8;
             }
-            tile_address = background_memory.wrapping_add(tile_row).wrapping_add(x_pos.wrapping_div(8) as u16);
+            tile_address = background_memory + tile_row + (x_pos / 8) as u16;
             tile_num = if unsig {
                 memory.read_from_memory(tile_address) as i16
             } else {
@@ -103,16 +101,16 @@ impl Gpu {
             };
             tile_location = tile_data;
             if unsig {
-                tile_location += tile_num.wrapping_mul(16) as u16;
+                tile_location += (tile_num * 16) as u16;
             } else {
-                tile_location += tile_num.wrapping_add(128).wrapping_mul(16) as u16;
+                tile_location += ((tile_num + 128) * 16) as u16;
             }
             let (data_1, data_2): (u8, u8) = {
-                let temp_address: u16 = tile_location.wrapping_add(line as u16);
-                (memory.read_from_memory(temp_address), memory.read_from_memory(temp_address.wrapping_add(1)))
+                let temp_address: u16 = tile_location + (line as u16);
+                (memory.read_from_memory(temp_address), memory.read_from_memory(temp_address + 1))
             };
 
-            color_bit = (x_pos.wrapping_rem(8) as i32).wrapping_sub(7).wrapping_mul(-1);
+            color_bit = -(((x_pos % 8) as i32) - 7);
             color_num = (if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 } << 1) | if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
 
             let (red, green, blue): (u8, u8, u8) = match Gpu::get_color(memory, 0xff47, color_num as u8) {
@@ -128,12 +126,10 @@ impl Gpu {
 
             self.scanline_bg[pixel as usize] = red == 255;
 
-            y = (ff44 as u32).wrapping_mul(WIDTH as u32).wrapping_mul(3);
-            x = (pixel as u32).wrapping_mul(3);
-            xy = x.wrapping_add(y);
+            xy = (pixel as u32) * 3 + (ff44 as u32) * (WIDTH as u32) * 3;
             self.screen_data[xy as usize] = red;
-            self.screen_data[xy.wrapping_add(1) as usize] = green;
-            self.screen_data[xy.wrapping_add(2) as usize] = blue;
+            self.screen_data[(xy + 1) as usize] = green;
+            self.screen_data[(xy + 2) as usize] = blue;
         }
     }
 
@@ -145,29 +141,26 @@ impl Gpu {
         let mut data_address: u16;
         let mut color_bit: i32;
         let mut color_num: u32;
-        let mut x_pix: u32;
         let mut pixel: u32;
-        let mut y: i64;
-        let mut x: i64;
         let mut xy: i64;
         for sprite in 0u16..40 {
             temp_address = 0xfe00 + (sprite * 4);
             let (y_pos, x_pos, tile_location, attributes): (u8, u8, u8, u8) =
-                (memory.read_from_memory(temp_address).wrapping_sub(16),
-                memory.read_from_memory(temp_address + 1).wrapping_sub(8),
+                (memory.read_from_memory(temp_address) - 16,
+                memory.read_from_memory(temp_address + 1) - 8,
                 memory.read_from_memory(temp_address + 2),
                 memory.read_from_memory(temp_address + 3));
             
             scanline = memory.read_from_memory(0xff44) as i32;
-            if (scanline >= (y_pos as i32)) && (scanline < ((y_pos as i32).wrapping_add(y_size))) {
-                line = scanline.wrapping_sub(y_pos as i32);
+            if (scanline >= (y_pos as i32)) && (scanline < ((y_pos as i32) + y_size)) {
+                line = scanline - (y_pos as i32);
 
                 if bit_logic::check_bit(attributes, 6) {
                     line = -(line - y_size);
                 }
 
-                data_address = 0x8000 + (tile_location as u16).wrapping_mul(16) + (line * 2) as u16;
-                let (data_1, data_2): (u8, u8) = (memory.read_from_memory(data_address), memory.read_from_memory(data_address.wrapping_add(1)));
+                data_address = 0x8000 + (tile_location as u16) * 16 + (line * 2) as u16;
+                let (data_1, data_2): (u8, u8) = (memory.read_from_memory(data_address), memory.read_from_memory(data_address + 1));
                 for tile_pixel in (0u8..=7).rev() {
                     color_bit = tile_pixel as i32;
                     if bit_logic::check_bit(attributes, 5) {
@@ -186,20 +179,16 @@ impl Gpu {
                         continue;
                     }
 
-                    x_pix = 7_u32.wrapping_sub(tile_pixel as u32);
-
-                    pixel = (x_pos as u32).wrapping_add(x_pix);
+                    pixel = (x_pos as u32) + (7_u32 - (tile_pixel as u32));
                     if pixel > 159 || scanline <= 0 || scanline > 143  {
                         continue;
                     }
 
                     if self.scanline_bg[pixel as usize] || !bit_logic::check_bit(attributes, 7) {
-                        y = (scanline as i64).wrapping_mul(WIDTH as i64).wrapping_mul(3);
-                        x = (pixel as i64).wrapping_mul(3);
-                        xy = x.wrapping_add(y);
+                        xy = (pixel as i64) * 3 + (scanline as i64) * (WIDTH as i64) * 3;
                         self.screen_data[xy as usize] = red;
-                        self.screen_data[xy.wrapping_add(1) as usize] = green;
-                        self.screen_data[xy.wrapping_add(2) as usize] = blue;
+                        self.screen_data[(xy + 1) as usize] = green;
+                        self.screen_data[(xy + 2) as usize] = blue;
                     }
                 }
             }
@@ -276,7 +265,7 @@ impl Gpu {
         }
         if self.scanline_counter <= 0 {
             let current_line = {
-                memory.rom[0xff44_usize] = memory.rom[0xff44_usize].wrapping_add(1);
+                memory.rom[0xff44_usize] += 1;
                 memory.read_from_memory(0xff44)
             };
             self.scanline_counter = SCANLINE_COUNTER_START as i32;

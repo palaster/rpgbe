@@ -106,11 +106,11 @@ impl Memory {
         match address {
             0x4000..=0x7fff => {
                 let new_address: u16 = address - 0x4000;
-                self.cartridge[(new_address.wrapping_add((self.current_rom_bank as u16).wrapping_mul(0x4000))) as usize]
+                self.cartridge[(new_address + ((self.current_rom_bank as u16) * 0x4000)) as usize]
             },
             0xa000..=0xbfff => {
                 let new_address: u16 = address - 0xa000;
-                self.ram_banks[(new_address.wrapping_add((self.current_ram_bank as u16).wrapping_mul(0x2000))) as usize]
+                self.ram_banks[(new_address + ((self.current_ram_bank as u16) * 0x2000)) as usize]
             },
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.get_gamepad_state(),
