@@ -60,7 +60,7 @@ const CB_INSTRUCTION_TIMINGS: [u8; 256] = [
 ];
 
 #[derive(Debug)]
-pub(crate) struct Cpu {
+pub struct Cpu {
     a: u8,
     b: u8,
     c: u8,
@@ -81,7 +81,7 @@ pub(crate) struct Cpu {
 }
 
 impl Cpu {
-    pub(crate) fn new() -> Cpu {
+    pub fn new() -> Cpu {
         Cpu {
             a: 0x01,
             b: 0x00,
@@ -101,20 +101,6 @@ impl Cpu {
             pending_interrupt_enable: false,
             one_instruction_passed: false,
         }
-    }
-
-    pub(crate) fn debug(&self) -> String {
-        format!("A: {:#02x}\nF: {:#02x}\nB: {:#02x}\nC: {:#02x}\nD: {:#02x}\nE: {:#02x}\nH: {:#02x}\nL: {:#02x}\nSP: {:#04x}\nPC: {:#04x}\n",
-        self.a,
-        self.get_f(),
-        self.b,
-        self.c,
-        self.d,
-        self.e,
-        self.h,
-        self.l,
-        self.sp,
-        self.pc)
     }
 
     fn get_f(&self) -> u8 {
@@ -151,8 +137,7 @@ impl Cpu {
     }
 
     fn rlc(&mut self, value: u8) -> u8 {
-        let truncated: u8 = if bit_logic::check_bit(value, 7) { 1 } else { 0 };
-        let result: u8 = (value << 1) | truncated;
+        let result: u8 = (value << 1) | if bit_logic::check_bit(value, 7) { 1 } else { 0 };
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = false;
@@ -161,8 +146,7 @@ impl Cpu {
     }
     
     fn rrc(&mut self, value: u8) -> u8 {
-        let truncated: u8 = if bit_logic::check_bit(value, 0) { 1 } else { 0 };
-        let result: u8 = (value >> 1) | (truncated << 7);
+        let result: u8 = (value >> 1) | (if bit_logic::check_bit(value, 0) { 1 } else { 0 } << 7);
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = false;
@@ -198,8 +182,7 @@ impl Cpu {
     }
     
     fn sra(&mut self, value: u8) -> u8 {
-        let mut result: u8 = value >> 1;
-        result = bit_logic::set_bit_to(bit_logic::check_bit(value, 7), result, 7);
+        let result: u8 = bit_logic::set_bit_to(bit_logic::check_bit(value, 7), value >> 1, 7);
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = false;
@@ -217,9 +200,7 @@ impl Cpu {
     }
     
     fn swap(&mut self, value: u8) -> u8 {
-        let lower: u8 = value & 0x0f;
-        let upper: u8 = (value & 0xf0) >> 4;
-        let result: u8 = (lower << 4) | upper;
+        let result: u8 = ((value & 0x0f) << 4) | (value & 0xf0) >> 4;
         self.zero = result == 0;
         self.subtract = false;
         self.half_carry = false;
@@ -359,18 +340,19 @@ impl Cpu {
 
     fn cp_byte(&mut self, value: u8, cping_value: u8) {
         let first: u8 = value;
-        let second: u8 = cping_value;
-        let result: u8 = first.wrapping_sub(second);
+        let result: u8 = first.wrapping_sub(cping_value);
         self.zero = result == 0;
         self.subtract = true;
-        self.half_carry = (first & 0xf) < (second & 0xf);
-        self.carry = first < second;
+        self.half_carry = (first & 0xf) < (cping_value & 0xf);
+        self.carry = first < cping_value;
     }
 
     fn ret(&mut self, memory: &mut Memory) {
+        /*
         let lower: u8 = self.pop(memory);
         let upper: u8 = self.pop(memory);
-        let pc: u16 = bit_logic::compose_bytes(lower, upper);
+        */
+        let pc: u16 = bit_logic::compose_bytes(self.pop(memory), self.pop(memory));
         /*
         if(gameBoy->eiHaltBug) {
             pc--;
@@ -2669,7 +2651,7 @@ impl Cpu {
                 let upper: u8 = self.fetch(memory);
                 memory_write_results.append(&mut memory.write_to_memory(bit_logic::compose_bytes(lower, upper), self.a));
             },
-            0xeb | 0xec | 0xed => {
+            0xeb..=0xed => {
                 // Blank Instruction
             },
             0xee => {

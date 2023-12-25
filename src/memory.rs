@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{bit_logic, MemoryWriteResult, TAC};
 
-pub(crate) struct Memory {
+pub struct Memory {
     pub(crate) gamepad_state: u8,
     rom_banking: bool,
     enable_ram: bool,
@@ -18,7 +18,7 @@ pub(crate) struct Memory {
 }
 
 impl Memory {
-    pub(crate) fn new() -> Memory {
+    pub fn new() -> Memory {
         let mut rom_vec = vec![0; 0x10000];
 
         rom_vec[0xff05] = 0x00;
@@ -67,14 +67,26 @@ impl Memory {
         }
     }
 
-    pub(crate) fn load_cartridge(&mut self, rom_path: PathBuf) {
+    pub(crate) fn load_cartridge(&mut self, game_data: Vec<u8>) {
+        self.cartridge = game_data;
+        for i in 0..0x8000 {
+            self.rom[i] = self.cartridge[i];
+        }
+        match self.cartridge[0x147] {
+            1..=3 => { self.mbc1 = true },
+            5 | 6 => { self.mbc2 = true },
+            _ => {},
+        }
+    }
+
+    pub(crate) fn load_cartridge_from_path(&mut self, rom_path: PathBuf) {
         let mut file = File::open(rom_path).expect("Invalid ROM path");
         file.read_to_end(&mut self.cartridge).expect("Unable to read ROM");
         for i in 0..0x8000 {
             self.rom[i] = self.cartridge[i];
         }
         match self.cartridge[0x147] {
-            1 | 2 | 3 => { self.mbc1 = true },
+            1..=3 => { self.mbc1 = true },
             5 | 6 => { self.mbc2 = true },
             _ => {},
         }
@@ -83,11 +95,9 @@ impl Memory {
     fn get_gamepad_state(&self) -> u8 {
         let mut res: u8 = self.rom[0xff00_usize] ^ 0xff;
         if !bit_logic::check_bit(res, 4) {
-            let top_gamepad: u8 = (self.gamepad_state >> 4) | 0xf0;
-            res &= top_gamepad;
+            res &= (self.gamepad_state >> 4) | 0xf0;
         } else if !bit_logic::check_bit(res, 5) {
-            let bottom_gamepad: u8 = (self.gamepad_state & 0xf) | 0xf0;
-            res &= bottom_gamepad;
+            res &= (self.gamepad_state & 0xf) | 0xf0;
         }
         res
     }
@@ -96,11 +106,11 @@ impl Memory {
         match address {
             0x4000..=0x7fff => {
                 let new_address: u16 = address - 0x4000;
-                self.cartridge[(new_address.wrapping_add((self.current_rom_bank as u16).wrapping_mul(0x4000))) as usize]
+                self.cartridge[(new_address + ((self.current_rom_bank as u16) * 0x4000)) as usize]
             },
             0xa000..=0xbfff => {
                 let new_address: u16 = address - 0xa000;
-                self.ram_banks[(new_address.wrapping_add((self.current_ram_bank as u16).wrapping_mul(0x2000))) as usize]
+                self.ram_banks[(new_address + ((self.current_ram_bank as u16) * 0x2000)) as usize]
             },
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.get_gamepad_state(),
@@ -137,18 +147,14 @@ impl Memory {
             }
             return;
         }
-        let lower5: u8 = value & 31;
-        self.current_rom_bank &= 224;
-        self.current_rom_bank |= lower5;
+        self.current_rom_bank = (self.current_rom_bank & 224) | (value & 31);
         if self.current_rom_bank == 0 {
             self.current_rom_bank += 1;
         }
     }
     
     fn do_change_hi_rom_bank(&mut self, value: u8) {
-        let new_value: u8 = value & 224;
-        self.current_rom_bank &= 31;
-        self.current_rom_bank |= new_value;
+        self.current_rom_bank = (self.current_rom_bank & 31) | (value & 224);
         if self.current_rom_bank == 0 {
             self.current_rom_bank += 1;
         }
@@ -159,8 +165,7 @@ impl Memory {
     }
     
     fn do_change_rom_ram_mode(&mut self, value: u8) {
-        let new_value: u8 = value & 0x1;
-        self.rom_banking = new_value == 0;
+        self.rom_banking = (value & 0x1) == 0;
         if self.rom_banking {
             self.current_ram_bank = 0;
         }
@@ -249,5 +254,9 @@ impl Memory {
             _ => { self.rom[address as usize] = value },
         }
         memory_write_results
+    }
+
+    pub(crate) fn request_interrupt(&mut self, interrupt_id: u8) {
+        self.write_to_memory(0xff0f, bit_logic::set_bit(self.read_from_memory(0xff0f), interrupt_id));
     }
 }
