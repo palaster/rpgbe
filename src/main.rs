@@ -5,6 +5,7 @@ use std::time::Instant;
 use sdl2::audio::{ AudioQueue, AudioSpecDesired };
 use sdl2::controller::Button;
 use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
 
 pub const WIDTH: u16 = 160;
@@ -40,19 +41,8 @@ enum MemoryWriteResult {
     ResetChannel(u8, u8),
 }
 
-#[link(name = "SceAudioIn_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceCommonDialog_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceCtrl_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceDisplay_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceGxm_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceHid_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceMotion_stub", kind = "static", modifiers = "+whole-archive")]
-#[link(name = "SceTouch_stub", kind = "static", modifiers = "+whole-archive")]
-extern "C" {}
-
 fn main() {
-    // let rom_path = std::env::args().nth(1).expect("No ROM path given");
+    let rom_path = std::env::args().nth(1).expect("No ROM path given");
 
     let sdl_context = sdl2::init().expect("Couldn't init sdl");
     let video_subsystem = sdl_context.video().expect("Couldn't init sdl video");
@@ -60,8 +50,10 @@ fn main() {
     let game_controller_subsystem = sdl_context.game_controller().expect("Couldn't init sdl game_controller");
 
     let window = video_subsystem.window("RPGBE", WIDTH.into(), HEIGHT.into())
-        .fullscreen_desktop()
-        .borderless()
+        .position_centered()
+        .resizable()
+//        .fullscreen_desktop()
+//        .borderless()
         .build()
         .expect("Couldn't create window from video");
 
@@ -90,7 +82,7 @@ fn main() {
                 return None;
             }
             game_controller_subsystem.open(id).ok()
-        }).expect("Couldn't open any controllers");
+        });
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
@@ -99,9 +91,8 @@ fn main() {
     let mut memory = memory::Memory::new();
     let mut spu = spu::Spu::new();
     let mut timer = timer::Timer::new();
-    memory.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
 
-    //gameboy.memory.load_cartridge_from_path(PathBuf::from(rom_path));
+    memory.load_cartridge_from_path(PathBuf::from(rom_path));
 
     let mut start: Instant;
     let mut cycles_this_frame: f64;
@@ -111,6 +102,38 @@ fn main() {
             match event {
                 Event::Quit {..} => {
                     break 'running
+                },
+                Event::KeyDown { keycode: Some(key_down), repeat: false, .. } => {
+                    let key_code: i8 = match key_down {
+                        Keycode::W => 2, // UP
+                        Keycode::A => 1, // LEFT
+                        Keycode::S => 3, // DOWN
+                        Keycode::D => 0, // RIGHT
+                        Keycode::H => 5, // B
+                        Keycode::U => 4, // A
+                        Keycode::B => 6, // SELECT
+                        Keycode::N => 7, // START
+                        _ => -1,
+                    };
+                    if key_code >= 0 {
+                        key_pressed(&mut memory, key_code as u8);
+                    }
+                },
+                Event::KeyUp { keycode: Some(key_up), repeat: false, .. } => {
+                    let key_code: i8 = match key_up {
+                        Keycode::W => 2, // UP
+                        Keycode::A => 1, // LEFT
+                        Keycode::S => 3, // DOWN
+                        Keycode::D => 0, // RIGHT
+                        Keycode::H => 5, // B
+                        Keycode::U => 4, // A
+                        Keycode::B => 6, // SELECT
+                        Keycode::N => 7, // START
+                        _ => -1,
+                    };
+                    if key_code >= 0 {
+                        key_released(&mut memory, key_code as u8);
+                    }
                 },
                 Event::ControllerButtonDown { button, .. } => {
                     let key_code: i8 = match button {

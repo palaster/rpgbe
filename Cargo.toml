@@ -8,13 +8,3 @@ edition = "2021"
 
 [dependencies]
 sdl2 = "0.35.2"
-
-[profile.release]
-panic = 'unwind'
-lto = true
-opt-level = 3
-
-[package.metadata.vita]
-title_id = "RPGBE0001"
-title_name = "RPGBE"
-assets = "./static"
