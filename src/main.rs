@@ -148,7 +148,6 @@ fn main() {
             gameboy.update_timer(cycles);
             gameboy.update_graphics(cycles);
             gameboy.update_audio(cycles);
-            do_interrupts(&mut gameboy);
             cycles_this_frame += (cycles + do_interrupts(&mut gameboy)) as f64;
         }
 
