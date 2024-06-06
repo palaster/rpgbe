@@ -2,71 +2,10 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
-use super::{bit_logic, MemoryWriteResult, TAC};
+use super::{bit_logic, TAC};
+use super::gameboy::Gameboy;
 
-pub struct Memory {
-    pub(crate) gamepad_state: u8,
-    rom_banking: bool,
-    enable_ram: bool,
-    mbc1: bool,
-    mbc2: bool,
-    current_rom_bank: u8,
-    current_ram_bank: u8,
-    ram_banks: Vec<u8>,
-    cartridge: Vec<u8>,
-    pub(crate) rom: Vec<u8>,
-}
-
-impl Memory {
-    pub fn new() -> Memory {
-        let mut rom_vec = vec![0; 0x10000];
-
-        rom_vec[0xff05] = 0x00;
-        rom_vec[0xff06] = 0x00;
-        rom_vec[0xff07] = 0x00;
-        rom_vec[0xff10] = 0x80;
-        rom_vec[0xff11] = 0xbf;
-        rom_vec[0xff12] = 0xf3;
-        rom_vec[0xff14] = 0xbf;
-        rom_vec[0xff16] = 0x3f;
-        rom_vec[0xff17] = 0x00;
-        rom_vec[0xff19] = 0xbf;
-        rom_vec[0xff1a] = 0x7f;
-        rom_vec[0xff1b] = 0xff;
-        rom_vec[0xff1c] = 0x9f;
-        rom_vec[0xff1e] = 0xbf;
-        rom_vec[0xff20] = 0xff;
-        rom_vec[0xff21] = 0x00;
-        rom_vec[0xff22] = 0x00;
-        rom_vec[0xff23] = 0xbf;
-        rom_vec[0xff24] = 0x77;
-        rom_vec[0xff25] = 0xf3;
-        rom_vec[0xff26] = 0xf1;
-        rom_vec[0xff40] = 0x91;
-        rom_vec[0xff42] = 0x00;
-        rom_vec[0xff43] = 0x00;
-        rom_vec[0xff45] = 0x00;
-        rom_vec[0xff47] = 0xfc;
-        rom_vec[0xff48] = 0xff;
-        rom_vec[0xff49] = 0xff;
-        rom_vec[0xff4a] = 0x00;
-        rom_vec[0xff4b] = 0x00;
-        rom_vec[0xffff] = 0x00;
-
-        Memory {
-            gamepad_state: 0xff,
-            rom_banking: false,
-            enable_ram: false,
-            mbc1: false,
-            mbc2: false,
-            current_rom_bank: 1,
-            current_ram_bank: 0,
-            ram_banks: vec![0; 0x8000],
-            cartridge: Vec::new(),
-            rom: rom_vec,
-        }
-    }
-
+impl Gameboy {
     pub(crate) fn load_cartridge_from_path(&mut self, rom_path: PathBuf) {
         let mut file = File::open(rom_path).expect("Invalid ROM path");
         file.read_to_end(&mut self.cartridge).expect("Unable to read ROM");
@@ -93,12 +32,10 @@ impl Memory {
     pub(crate) fn read_from_memory(&self, address: u16) -> u8 {
         match address {
             0x4000..=0x7fff => {
-                let new_address: u16 = address - 0x4000;
-                self.cartridge[(new_address + ((self.current_rom_bank as u16) * 0x4000)) as usize]
+                self.cartridge[((address - 0x4000) + ((self.current_rom_bank as u16) * 0x4000)) as usize]
             },
             0xa000..=0xbfff => {
-                let new_address: u16 = address - 0xa000;
-                self.ram_banks[(new_address + ((self.current_ram_bank as u16) * 0x2000)) as usize]
+                self.ram_banks[((address - 0xa000) + ((self.current_ram_bank as u16) * 0x2000)) as usize]
             },
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.get_gamepad_state(),
@@ -106,13 +43,11 @@ impl Memory {
         }
     }
 
-    fn do_dma_transfer(&mut self, value: u8) -> Vec<MemoryWriteResult> {
+    fn do_dma_transfer(&mut self, value: u8) {
         let address: u16 = (value as u16) << 8;
-        let mut memory_results: Vec<MemoryWriteResult> = Vec::new();
         for i in 0..0xa0 {
-            memory_results.append(&mut self.write_to_memory(0xfe00 + i, self.read_from_memory(address + i)));
+            self.write_to_memory(0xfe00 + i, self.read_from_memory(address + i));
         }
-        memory_results
     }
 
     fn do_ram_bank_enable(&mut self, address: u16, value: u8) {
@@ -140,24 +75,6 @@ impl Memory {
             self.current_rom_bank += 1;
         }
     }
-    
-    fn do_change_hi_rom_bank(&mut self, value: u8) {
-        self.current_rom_bank = (self.current_rom_bank & 31) | (value & 224);
-        if self.current_rom_bank == 0 {
-            self.current_rom_bank += 1;
-        }
-    }
-    
-    fn do_ram_bank_change(&mut self, value: u8) {
-        self.current_ram_bank = value & 0x3;
-    }
-    
-    fn do_change_rom_ram_mode(&mut self, value: u8) {
-        self.rom_banking = (value & 0x1) == 0;
-        if self.rom_banking {
-            self.current_ram_bank = 0;
-        }
-    }
 
     fn handle_banking(&mut self, address: u16, value: u8) {
         match address {
@@ -174,23 +91,28 @@ impl Memory {
             0x4000..=0x5fff => {
                 if self.mbc1 {
                     if self.rom_banking {
-                        self.do_change_hi_rom_bank(value);
+                        self.current_rom_bank = (self.current_rom_bank & 31) | (value & 224);
+                        if self.current_rom_bank == 0 {
+                            self.current_rom_bank += 1;
+                        }
                     } else {
-                        self.do_ram_bank_change(value);
+                        self.current_ram_bank = value & 0x3;
                     }
                 }
             },
             0x6000..=0x7fff => {
                 if self.mbc1 {
-                    self.do_change_rom_ram_mode(value);
+                    self.rom_banking = (value & 0x1) == 0;
+                    if self.rom_banking {
+                        self.current_ram_bank = 0;
+                    }
                 }
             },
             _ => {},
         }
     }
 
-    pub(crate) fn write_to_memory(&mut self, address: u16, value: u8) -> Vec<MemoryWriteResult> {
-        let memory_write_results: Vec<MemoryWriteResult> = vec![MemoryWriteResult::None];
+    pub(crate) fn write_to_memory(&mut self, address: u16, value: u8) {
         match address {
             0..=0x7fff => { self.handle_banking(address, value) },
             0xa000..=0xbfff => {
@@ -214,34 +136,45 @@ impl Memory {
                 let current_freq: u8 = self.read_from_memory(TAC) & 0x3;
                 self.rom[address as usize] = value;
                 let new_freq: u8 = self.read_from_memory(TAC) & 0x3;
-                if current_freq != new_freq { return vec![MemoryWriteResult::SetTimerCounter]; }
+                if current_freq != new_freq {
+                    self.set_clock_freq();
+                }
             },
             0xff04 | 0xff44 => {
                 self.rom[address as usize] = 0;
-                if address == 0xff04 { return vec![MemoryWriteResult::ResetDividerCounter]; }
+                if address == 0xff04 {
+                    self.divider_counter = 0;
+                }
             },
             0xff46 => {
-                return self.do_dma_transfer(value);
+                self.do_dma_transfer(value);
             },
             0xff14 => {
                 self.rom[address as usize] = value;
-                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(0, self.read_from_memory(0xff11) & 0x3f)]; }
+                if value >> 7 == 1 {
+                    self.reset_sound_channel_1(self.read_from_memory(0xff11) & 0x3f);
+                }
             },
             0xff19 => {
                 self.rom[address as usize] = value;
-                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(1, self.read_from_memory(0xff16) & 0x3f)]; }
+                if value >> 7 == 1 {
+                    self.reset_sound_channel_2(self.read_from_memory(0xff16) & 0x3f);
+                }
             },
             0xff1e => {
                 self.rom[address as usize] = value;
-                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(2, self.read_from_memory(0xff1b))]; }
+                if value >> 7 == 1 {
+                    self.reset_sound_channel_3(self.read_from_memory(0xff1b));
+                }
             },
             0xff23 => {
                 self.rom[address as usize] = value;
-                if value >> 7 == 1 { return vec![MemoryWriteResult::ResetChannel(3, self.read_from_memory(0xff20) & 0x3f)]; }
+                if value >> 7 == 1 {
+                    self.reset_sound_channel_4(self.read_from_memory(0xff20) & 0x3f);
+                }
             },
             _ => { self.rom[address as usize] = value },
         }
-        memory_write_results
     }
 
     pub(crate) fn request_interrupt(&mut self, interrupt_id: u8) {
