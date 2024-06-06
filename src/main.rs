@@ -20,25 +20,18 @@ pub const SAMPLE_RATE: u16 = 44_100;
 pub const TIME_BETWEEN_AUDIO_SAMPLING: u8 = (CYCLES_PER_SECOND / SAMPLE_RATE as u32) as u8;
 
 use std::time::Duration;
-
 const TAC: u16 = 0xff07;
 
 mod bit_logic;
 mod cpu;
+mod gameboy;
 mod gpu;
 mod memory;
 mod spu;
 mod timer;
 
-use cpu::Cpu;
-use memory::Memory;
+use gameboy::Gameboy;
 
-enum MemoryWriteResult {
-    None,
-    ResetDividerCounter,
-    SetTimerCounter,
-    ResetChannel(u8, u8),
-}
 
 #[link(name = "SceAudioIn_stub", kind = "static", modifiers = "+whole-archive")]
 #[link(name = "SceAudio_stub", kind = "static", modifiers = "+whole-archive")]
@@ -94,12 +87,8 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().expect("Couldn't get event_pump from sdl_context");
 
-    let mut cpu = cpu::Cpu::new();
-    let mut gpu = gpu::Gpu::new();
-    let mut memory = memory::Memory::new();
-    let mut spu = spu::Spu::new();
-    let mut timer = timer::Timer::new();
-    memory.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
+    let mut gameboy = gameboy::Gameboy::new();
+    gameboy.load_cartridge(include_bytes!("../../tetris.gb").to_vec());
 
     //gameboy.memory.load_cartridge_from_path(PathBuf::from(rom_path));
 
@@ -125,7 +114,7 @@ fn main() {
                         _ => -1,
                     };
                     if key_code >= 0 {
-                        key_pressed(&mut memory, key_code as u8);
+                        key_pressed(&mut gameboy, key_code as u8);
                     }
                 },
                 Event::ControllerButtonUp { button, .. } => {
@@ -141,7 +130,7 @@ fn main() {
                         _ => -1,
                     };
                     if key_code >= 0 {
-                        key_released(&mut memory, key_code as u8);
+                        key_released(&mut gameboy, key_code as u8);
                     }
                 },
                 _ => (),
@@ -151,109 +140,25 @@ fn main() {
         start = Instant::now();
         cycles_this_frame = 0.0;
         while cycles_this_frame <= CYCLES_PER_FRAME {
-            cycles = 4;
-            if !cpu.halted {
-                let (new_cycles, memory_write_results) = cpu.update(&mut memory);
-                cycles = new_cycles * 4;
-                for memory_result in memory_write_results {
-                    match memory_result {
-                        MemoryWriteResult::ResetDividerCounter => {
-                            timer.divider_counter = 0
-                        },
-                        MemoryWriteResult::SetTimerCounter => {
-                            timer.set_clock_freq(&memory)
-                        },
-                        MemoryWriteResult::ResetChannel(id, length) => {
-                            match id {
-                                0 => { spu.sound_channel_1.reset(&memory, length) },
-                                1 => { spu.sound_channel_2.reset(&memory, length) },
-                                2 => { spu.sound_channel_3.reset(&memory, length) },
-                                3 => { spu.sound_channel_4.reset(&memory, length) },
-                                _ => { },
-                            }
-                        },
-                        _ => { },
-                    }
-                }
-            }
-
-            for memory_result in timer.update_timer(&mut memory, cycles) {
-                match memory_result {
-                    MemoryWriteResult::ResetDividerCounter => {
-                        timer.divider_counter = 0
-                    },
-                    MemoryWriteResult::SetTimerCounter => {
-                        timer.set_clock_freq(&memory)
-                    },
-                    MemoryWriteResult::ResetChannel(id, length) => {
-                        match id {
-                            0 => { spu.sound_channel_1.reset(&memory, length) },
-                            1 => { spu.sound_channel_2.reset(&memory, length) },
-                            2 => { spu.sound_channel_3.reset(&memory, length) },
-                            3 => { spu.sound_channel_4.reset(&memory, length) },
-                            _ => { },
-                        }
-                    },
-                    _ => { },
-                }
-            }
-            gpu.update_graphics(&mut memory, cycles);
-            if let Some((new_nr13, new_nr14)) = spu.update_audio(&memory, cycles) {
-                let mut memory_write_results = memory.write_to_memory(0xff13, new_nr13);
-                memory_write_results.append(&mut memory.write_to_memory(0xff14, new_nr14));
-                for memory_result in memory_write_results {
-                    match memory_result {
-                        MemoryWriteResult::ResetDividerCounter => {
-                            timer.divider_counter = 0
-                        },
-                        MemoryWriteResult::SetTimerCounter => {
-                            timer.set_clock_freq(&memory)
-                        },
-                        MemoryWriteResult::ResetChannel(id, length) => {
-                            match id {
-                                0 => { spu.sound_channel_1.reset(&memory, length) },
-                                1 => { spu.sound_channel_2.reset(&memory, length) },
-                                2 => { spu.sound_channel_3.reset(&memory, length) },
-                                3 => { spu.sound_channel_4.reset(&memory, length) },
-                                _ => { },
-                            }
-                        },
-                        _ => { },
-                    }
-                }
-            }
-
-            let (memory_write_results, cycles_taken) = do_interrupts(&mut cpu, &mut memory);
-            for memory_result in memory_write_results {
-                match memory_result {
-                    MemoryWriteResult::ResetDividerCounter => {
-                        timer.divider_counter = 0
-                    },
-                    MemoryWriteResult::SetTimerCounter => {
-                        timer.set_clock_freq(&memory)
-                    },
-                    MemoryWriteResult::ResetChannel(id, length) => {
-                        match id {
-                            0 => { spu.sound_channel_1.reset(&memory, length) },
-                            1 => { spu.sound_channel_2.reset(&memory, length) },
-                            2 => { spu.sound_channel_3.reset(&memory, length) },
-                            3 => { spu.sound_channel_4.reset(&memory, length) },
-                            _ => { },
-                        }
-                    },
-                    _ => { },
-                }
-            }
-            cycles_this_frame += (cycles + cycles_taken) as f64;
+            cycles = if !gameboy.halted {
+                gameboy.update() * 4
+            } else {
+                4
+            };
+            gameboy.update_timer(cycles);
+            gameboy.update_graphics(cycles);
+            gameboy.update_audio(cycles);
+            do_interrupts(&mut gameboy);
+            cycles_this_frame += (cycles + do_interrupts(&mut gameboy)) as f64;
         }
 
-        texture.update(None, &gpu.screen_data, WIDTH.wrapping_mul(3) as usize).expect("Couldn't update texture from main");
+        texture.update(None, &gameboy.screen_data, 480).expect("Couldn't update texture from main");
         canvas.clear();
         canvas.copy(&texture, None, None).expect("Couldn't copy canvas");
         canvas.present();
 
-        let _ = device.queue_audio(&spu.audio_data);
-        spu.audio_data.clear();
+        let _ = device.queue_audio(&gameboy.audio_data);
+        gameboy.audio_data.clear();
 
         let elapsed_time = start.elapsed();
         if elapsed_time <= DURATION_BETWEEN_FRAMES {
@@ -262,59 +167,59 @@ fn main() {
     }
 }
 
-fn key_pressed(memory: &mut Memory, key: u8) {
-    let previously_unset: bool = !bit_logic::check_bit(memory.gamepad_state, key);
+fn key_pressed(gameboy: &mut Gameboy, key: u8) {
+    let previously_unset: bool = !bit_logic::check_bit(gameboy.gamepad_state, key);
 
-    memory.gamepad_state = bit_logic::reset_bit(memory.gamepad_state, key);
+    gameboy.gamepad_state = bit_logic::reset_bit(gameboy.gamepad_state, key);
 
     let button: bool = key > 3;
 
-    let key_req: u8 = memory.rom[0xff00_usize];
+    let key_req: u8 = gameboy.rom[0xff00_usize];
     let should_request_interrupt: bool = (button && !bit_logic::check_bit(key_req, 5)) || (!button && !bit_logic::check_bit(key_req, 4));
 
     if should_request_interrupt && !previously_unset {
-        memory.request_interrupt(4);
+        gameboy.request_interrupt(4);
     }
 }
 
-fn key_released(memory: &mut Memory, key: u8) {
-    memory.gamepad_state = bit_logic::set_bit(memory.gamepad_state, key);
+fn key_released(gameboy: &mut Gameboy, key: u8) {
+    gameboy.gamepad_state = bit_logic::set_bit(gameboy.gamepad_state, key);
 }
 
-fn service_interrupt(cpu: &mut Cpu, memory: &mut Memory, interrupt_id: u8) -> Vec<MemoryWriteResult> {
-    cpu.interrupts_enabled = false;
+fn service_interrupt(gameboy: &mut Gameboy, interrupt_id: u8) {
+    gameboy.interrupts_enabled = false;
     //self.write_to_address(0xff0f, bit_logic::reset_bit(memory.read_from_memory(0xff0f), interrupt_id));
 
-    let pc: u16 = cpu.pc;
-    cpu.push(memory, (pc >> 8) as u8);
-    cpu.push(memory, pc as u8);
+    let pc: u16 = gameboy.pc;
+    gameboy.push((pc >> 8) as u8);
+    gameboy.push(pc as u8);
 
     match interrupt_id {
-        0 => { cpu.pc = 0x40 },
-        1 => { cpu.pc = 0x48 },
-        2 => { cpu.pc = 0x50 },
-        3 => { cpu.pc = 0x58 },
-        4 => { cpu.pc = 0x60 },
+        0 => { gameboy.pc = 0x40 },
+        1 => { gameboy.pc = 0x48 },
+        2 => { gameboy.pc = 0x50 },
+        3 => { gameboy.pc = 0x58 },
+        4 => { gameboy.pc = 0x60 },
         _ => {},
     }
-    memory.write_to_memory(0xff0f, bit_logic::reset_bit(memory.read_from_memory(0xff0f), interrupt_id))
+    gameboy.write_to_memory(0xff0f, bit_logic::reset_bit(gameboy.read_from_memory(0xff0f), interrupt_id))
 }
 
-fn do_interrupts(cpu: &mut Cpu, memory: &mut Memory) -> (Vec<MemoryWriteResult>, u8) {
-    let result = Vec::new();
-    let (req, enabled): (u8, u8) = (memory.read_from_memory(0xff0f), memory.read_from_memory(0xffff));
+fn do_interrupts(gameboy: &mut Gameboy) -> u8 {
+    let (req, enabled): (u8, u8) = (gameboy.read_from_memory(0xff0f), gameboy.read_from_memory(0xffff));
     let potential_for_interrupts: u8 = req & enabled;
     if potential_for_interrupts == 0 {
-        return (result, 0);
+        return 0;
     }
-    if cpu.interrupts_enabled {
-        cpu.halted = false;
+    if gameboy.interrupts_enabled {
+        gameboy.halted = false;
         for i in 0..5 {
             if bit_logic::check_bit(req, i) && bit_logic::check_bit(enabled, i) {
-                return (service_interrupt(cpu, memory, i), 20);
+                service_interrupt(gameboy, i);
+                return 20;
             }
         }
     }
-    cpu.halted = false;
-    (result, 0)
+    gameboy.halted = false;
+    0
 }

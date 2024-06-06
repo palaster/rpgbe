@@ -1,30 +1,13 @@
 use super::bit_logic;
-use super::{WIDTH, HEIGHT};
-use super::Memory;
-
-pub const SCREEN_DATA_SIZE: u32 = (WIDTH as u32) * (HEIGHT as u32) * 3;
+use super::WIDTH;
+use super::gameboy::{SCANLINE_COUNTER_START, Gameboy};
 
 const VERTICAL_BLANK_SCAN_LINE: u8 = 144;
 const VERTICAL_BLANK_SCAN_LINE_MAX: u8 = 153;
-const SCANLINE_COUNTER_START: u16 = 456;
 
-pub struct Gpu {
-    scanline_counter: i32,
-    pub screen_data: [u8; SCREEN_DATA_SIZE as usize],
-    scanline_bg: [bool; WIDTH as usize],
-}
-
-impl Gpu {
-    pub fn new() -> Gpu {
-        Gpu {
-            scanline_counter: SCANLINE_COUNTER_START as i32,
-            screen_data: [0; SCREEN_DATA_SIZE as usize],
-            scanline_bg: [false; WIDTH as usize],
-        }
-    }
-
-    fn get_color(memory: &Memory, address: u16, color_num: u8) -> u8 {
-        let palette: u8 = memory.read_from_memory(address);
+impl Gameboy {
+    fn get_color(&self, address: u16, color_num: u8) -> u8 {
+        let palette: u8 = self.read_from_memory(address);
 
         let (hi, lo) = match color_num {
             0 => (1, 0),
@@ -43,16 +26,11 @@ impl Gpu {
         }
     }
 
-    fn render_tiles(&mut self, memory: &Memory) {
+    fn render_tiles(&mut self) {
         let mut unsig: bool = true;
-        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (memory.read_from_memory(0xff40), memory.read_from_memory(0xff42), memory.read_from_memory(0xff43), memory.read_from_memory(0xff4a), memory.read_from_memory(0xff4b) - 7);
-
-        let mut using_window: bool = false;
-
-        let ff44 = memory.read_from_memory(0xff44);
-        if bit_logic::check_bit(lcd_control, 5) && window_y <= ff44 {
-            using_window = true;
-        }
+        let (lcd_control, scroll_y, scroll_x, window_y, window_x): (u8, u8, u8, u8, u8) = (self.read_from_memory(0xff40), self.read_from_memory(0xff42), self.read_from_memory(0xff43), self.read_from_memory(0xff4a), self.read_from_memory(0xff4b) - 7);
+        let ff44 = self.read_from_memory(0xff44);
+        let using_window: bool = bit_logic::check_bit(lcd_control, 5) && window_y <= ff44;
 
         let tile_data: u16 = if bit_logic::check_bit(lcd_control, 4) {
             0x8000
@@ -95,9 +73,9 @@ impl Gpu {
             }
             tile_address = background_memory + tile_row + (x_pos / 8) as u16;
             tile_num = if unsig {
-                memory.read_from_memory(tile_address) as i16
+                self.read_from_memory(tile_address) as i16
             } else {
-                (memory.read_from_memory(tile_address) as i8) as i16
+                (self.read_from_memory(tile_address) as i8) as i16
             };
             tile_location = tile_data;
             if unsig {
@@ -107,13 +85,13 @@ impl Gpu {
             }
             let (data_1, data_2): (u8, u8) = {
                 let temp_address: u16 = tile_location + (line as u16);
-                (memory.read_from_memory(temp_address), memory.read_from_memory(temp_address + 1))
+                (self.read_from_memory(temp_address), self.read_from_memory(temp_address + 1))
             };
 
             color_bit = -(((x_pos % 8) as i32) - 7);
             color_num = (if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 } << 1) | if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
 
-            let (red, green, blue): (u8, u8, u8) = match Gpu::get_color(memory, 0xff47, color_num as u8) {
+            let (red, green, blue): (u8, u8, u8) = match self.get_color(0xff47, color_num as u8) {
                 0 => (255, 255, 255),
                 1 => (0xcc, 0xcc, 0xcc),
                 2 => (0x77, 0x77, 0x77),
@@ -133,8 +111,8 @@ impl Gpu {
         }
     }
 
-    fn render_sprites(&mut self, memory: &Memory) {
-        let y_size: i32 = if bit_logic::check_bit(memory.read_from_memory(0xff40), 2) { 16 } else { 8 };
+    fn render_sprites(&mut self) {
+        let y_size: i32 = if bit_logic::check_bit(self.read_from_memory(0xff40), 2) { 16 } else { 8 };
         let mut temp_address: u16;
         let mut scanline: i32;
         let mut line: i32;
@@ -146,12 +124,12 @@ impl Gpu {
         for sprite in 0u16..40 {
             temp_address = 0xfe00 + (sprite * 4);
             let (y_pos, x_pos, tile_location, attributes): (u8, u8, u8, u8) =
-                (memory.read_from_memory(temp_address) - 16,
-                memory.read_from_memory(temp_address + 1) - 8,
-                memory.read_from_memory(temp_address + 2),
-                memory.read_from_memory(temp_address + 3));
+                (self.read_from_memory(temp_address) - 16,
+                self.read_from_memory(temp_address + 1) - 8,
+                self.read_from_memory(temp_address + 2),
+                self.read_from_memory(temp_address + 3));
             
-            scanline = memory.read_from_memory(0xff44) as i32;
+            scanline = self.read_from_memory(0xff44) as i32;
             if (scanline >= (y_pos as i32)) && (scanline < ((y_pos as i32) + y_size)) {
                 line = scanline - (y_pos as i32);
 
@@ -160,7 +138,7 @@ impl Gpu {
                 }
 
                 data_address = 0x8000 + (tile_location as u16) * 16 + (line * 2) as u16;
-                let (data_1, data_2): (u8, u8) = (memory.read_from_memory(data_address), memory.read_from_memory(data_address + 1));
+                let (data_1, data_2): (u8, u8) = (self.read_from_memory(data_address), self.read_from_memory(data_address + 1));
                 for tile_pixel in (0u8..=7).rev() {
                     color_bit = tile_pixel as i32;
                     if bit_logic::check_bit(attributes, 5) {
@@ -168,7 +146,7 @@ impl Gpu {
                     }
                     color_num = (if bit_logic::check_bit(data_2, color_bit as u8) { 1 } else { 0 } << 1) | if bit_logic::check_bit(data_1, color_bit as u8) { 1 } else { 0 };
                     
-                    let (red, green, blue): (u8, u8, u8) = match Gpu::get_color(memory, if bit_logic::check_bit(attributes, 4) { 0xff49 } else { 0xff48 }, color_num as u8) {
+                    let (red, green, blue): (u8, u8, u8) = match self.get_color(if bit_logic::check_bit(attributes, 4) { 0xff49 } else { 0xff48 }, color_num as u8) {
                         0 => (255, 255, 255),
                         1 => (0xcc, 0xcc, 0xcc),
                         2 => (0x77, 0x77, 0x77),
@@ -195,29 +173,29 @@ impl Gpu {
         }
     }
 
-    fn draw_scanline(&mut self, memory: &Memory) {
-        let control: u8 =  memory.read_from_memory(0xff40);
+    fn draw_scanline(&mut self) {
+        let control: u8 =  self.read_from_memory(0xff40);
         if bit_logic::check_bit(control, 0) {
-            self.render_tiles(memory);
+            self.render_tiles();
         }
         if bit_logic::check_bit(control, 1) {
-            self.render_sprites(memory);
+            self.render_sprites();
         }
     }
 
-    fn is_lcd_enabled(&self, memory: &Memory) -> bool {
-        bit_logic::check_bit(memory.read_from_memory(0xff40), 7)
+    fn is_lcd_enabled(&self) -> bool {
+        bit_logic::check_bit(self.read_from_memory(0xff40), 7)
     }
 
-    fn set_lcd_status(&mut self, memory: &mut Memory) {
-        let mut status: u8 = memory.read_from_memory(0xff41);
-        if !self.is_lcd_enabled(memory) {
+    fn set_lcd_status(&mut self) {
+        let mut status: u8 = self.read_from_memory(0xff41);
+        if !self.is_lcd_enabled() {
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
-            memory.rom[0xff44_usize] = 0;
-            memory.write_to_memory(0xff41, bit_logic::set_bit(status & 252, 0));
+            self.rom[0xff44_usize] = 0;
+            self.write_to_memory(0xff41, bit_logic::set_bit(status & 252, 0));
             return;
         }
-        let current_line: u8 = memory.read_from_memory(0xff44);
+        let current_line: u8 = self.read_from_memory(0xff44);
         let current_mode: u8 = status & 0x3;
         let mode: u8;
         let mut req_int: bool = false;
@@ -243,38 +221,38 @@ impl Gpu {
             }
         }
         if req_int && current_mode != mode {
-            memory.request_interrupt(1);
+            self.request_interrupt(1);
         }
-        if current_line == memory.read_from_memory(0xff45) {
+        if current_line == self.read_from_memory(0xff45) {
             status = bit_logic::set_bit(status, 2);
             if bit_logic::check_bit(status, 6) {
-                memory.request_interrupt(1);
+                self.request_interrupt(1);
             }
         } else {
             status = bit_logic::reset_bit(status, 2);
         }
-        memory.write_to_memory(0xff41, status);
+        self.write_to_memory(0xff41, status);
     }
 
-    pub(crate) fn update_graphics(&mut self, memory: &mut Memory, cycles: u8) {
-        self.set_lcd_status(memory);
-        if self.is_lcd_enabled(memory) {
+    pub(crate) fn update_graphics(&mut self, cycles: u8) {
+        self.set_lcd_status();
+        if self.is_lcd_enabled() {
             self.scanline_counter -= cycles as i32;
         } else {
             return;
         }
         if self.scanline_counter <= 0 {
             let current_line = {
-                memory.rom[0xff44_usize] += 1;
-                memory.read_from_memory(0xff44)
+                self.rom[0xff44_usize] += 1;
+                self.read_from_memory(0xff44)
             };
             self.scanline_counter = SCANLINE_COUNTER_START as i32;
             if current_line == VERTICAL_BLANK_SCAN_LINE {
-                memory.request_interrupt(0);
+                self.request_interrupt(0);
             } else if current_line > VERTICAL_BLANK_SCAN_LINE_MAX {
-                memory.rom[0xff44_usize] = 0;
+                self.rom[0xff44_usize] = 0;
             } else if current_line < VERTICAL_BLANK_SCAN_LINE {
-                self.draw_scanline(memory);
+                self.draw_scanline();
             }
         }
     }
