@@ -117,8 +117,7 @@ impl Gameboy {
             0..=0x7fff => { self.handle_banking(address, value) },
             0xa000..=0xbfff => {
                 if self.enable_ram {
-                    let new_address: u16 = address - 0xa000;
-                    self.ram_banks[(new_address + (self.current_ram_bank as u16) * 0x2000) as usize] = value
+                    self.ram_banks[((address - 0xa000) + (self.current_ram_bank as u16) * 0x2000) as usize] = value
                 }
             },
             0xc000..=0xdfff => {

@@ -95,7 +95,7 @@ impl Gameboy {
         self.sound_channel_1.envelope_enabled = true;
 
         let new_frequency_timer = (nr14 as u16) & 0b111 << 8 | (nr13 as u16);
-        self.sound_channel_1.frequency_timer = (2048 - new_frequency_timer) * 4;
+        self.sound_channel_1.frequency_timer = 8192 - (new_frequency_timer * 4);
 
         self.sound_channel_1.sweep_period = (nr10 >> 4) & 0b111;
         let sweep_shift = nr10 & 0b111;
@@ -116,7 +116,8 @@ impl Gameboy {
 
         self.sound_channel_1.frame_sequence_timer -= 1;
         if self.sound_channel_1.frame_sequence_timer == 0 {
-            self.sound_channel_1.frame_sequence_timer = (8192 + 1) & 8;
+            // TODO: self.sound_channel_1.frame_sequence_timer = (8192 + 1) & 8; THIS EQUALS 0
+            self.sound_channel_1.frame_sequence_timer = 8192;
             if self.sound_channel_1.frame_sequence % 2 == 0 && bit_logic::check_bit(nr14, 6) && self.sound_channel_1.length != 0 {
                 self.sound_channel_1.length -= 1;
                 if self.sound_channel_1.length == 0 { self.sound_channel_1.enabled = false; }
